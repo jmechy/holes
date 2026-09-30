@@ -269,6 +269,13 @@ export class Game {
       }
     }
 
+    // Keep hole outlines above the highest stacked decal (maps with many decals stack past y=0.03).
+    const decalTop = 0.01 + decalN * 0.002;
+    for (const h of this.holes) {
+      h.ring.position.y = Math.max(h.ring.position.y, decalTop + 0.01);
+      if (h.progRing) h.progRing.position.y = h.ring.position.y + 0.005;
+    }
+
     this.timeLeft = this.opts.mode === 'arcade' ? ARCADE_START_SECONDS : TIME_ATTACK_SECONDS;
     this.arc = { score: 0, combo: 0, comboT: 0, bestCombo: 0, maxLevel: 1, gainPending: 0, gainT: 0, elapsed: 0, lastTick: -1, bonus: 0 };
     this.endT = 0;
