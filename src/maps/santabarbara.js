@@ -397,7 +397,7 @@ export default {
       edgeRow(b, 'W', POOL.infill.concat(pool.slice(0, 4)), { maxD: (b.x1 - b.x0) / 2 - 0.5, a0: b.z0 + 8, a1: b.z1 - 8, skip: 0.2 });
       edgeRow(b, 'E', POOL.infill.concat(pool.slice(0, 4)), { maxD: (b.x1 - b.x0) / 2 - 0.5, a0: b.z0 + 8, a1: b.z1 - 8, skip: 0.2 });
       // shade + interior trees
-      for (let i = 0; i < 6; i++) put(pick(['oak', 'oakSmall', 'palmMed', 'palmFan']), randRange(b.x0 + 2, b.x1 - 2), randRange(b.z0 + 2, b.z1 - 2), undefined, 1);
+      for (let i = 0; i < 4; i++) put(pick(['oak', 'oakSmall', 'palmMed', 'palmFan']), randRange(b.x0 + 2, b.x1 - 2), randRange(b.z0 + 2, b.z1 - 2), undefined, 1);
     }
     // Funk Zone: warehouses + wine bars between Cabrillo and the railroad
     const funk = ['funkWarehouse', 'funkWarehouseB', 'wineBar', 'wineBarB'];
@@ -435,7 +435,8 @@ export default {
     for (const [x, z] of [[13.5, -50], [38, -50], [13.5, 6], [38, 6], [13.5, -27], [38, -27], [25.75, -50], [13.5, -13], [38, -13]]) put(pick(['oak', 'palmQueen', 'oak']), x, z, undefined, 1);
     for (const [x, z] of [[19, 3], [32.5, 3], [19, -7], [32.5, -7]]) put('topiary', x, z, 0, 1);
     put('sundial', 25.75, -2, 0, 1);
-    for (let i = 0; i < 12; i++) put(pick(['bench', 'bougM', 'bougP', 'agave']), randRange(16, 35), randRange(-10, 4), undefined, 1);
+    for (let x = 16.5; x <= 35; x += 3.7) { put(x % 2 > 1 ? 'bougM' : 'bougP', x, 5.2, 0, 1); put('agave', x + 1.8, -9.6, 0, 1); }
+    for (const [x, z, r] of [[15.2, -4, PI / 2], [36.3, -4, -PI / 2], [15.2, -20, PI / 2], [36.3, -20, -PI / 2]]) put('bench', x, z, r, 1);
 
     // ---------------------------------------------------------------- street trees + furniture
     const st = byName.state;
@@ -511,7 +512,18 @@ export default {
     const stateWalk = (name, z0, z1, n, o) => { let c = 0; for (let i = 0; i < n * 6 && c < n; i++) { const sd = rand() < 0.5 ? -1 : 1; if (put(name, sd * (8.75 + randRange(-0.35, 0.35)), randRange(z0, z1), undefined, 1, o)) c++; } return c; };
     for (const n of ['tourist', 'touristB', 'local', 'localB', 'kid']) stateWalk(n, -24, 24, 3, walk(1.2));
     stateWalk('dog', -24, 24, 2, walk(1.6)); stateWalk('seagull', -24, 24, 3, walk(1.6));
-    for (const [n, k] of [['cafeChair', 4], ['newsBox', 3], ['trashCan', 3], ['hydrant', 3], ['mailbox', 2], ['bike', 2], ['bougM', 3], ['agave', 3], ['roseRed', 3], ['rosePink', 3], ['roseWhite', 3], ['pottedPalm', 2], ['topiary', 2], ['bikeRack', 2]]) stateWalk(n, -24, 24, k);
+    // Orderly State Street furniture: a repeating bin / planter / bike rack / news box / hydrant rhythm along both walks, staggered
+    // between the two sides, with a cafe table + two chairs in front of every other shop front
+    const rhythm = ['trashCan', 'bougM', 'bikeRack', 'newsBox', 'pottedPalm', 'hydrant', 'topiary', 'mailbox'];
+    let ri = 0;
+    for (let z = -23; z <= 24; z += 6) for (const sd of [-1, 1]) {
+      const zz = z + (sd > 0 ? 3 : 0);
+      put(rhythm[ri++ % rhythm.length], sd * 10.4, zz, sd > 0 ? -PI / 2 : PI / 2, 1);
+    }
+    for (let z = -20; z <= 22; z += 14) for (const sd of [-1, 1]) {
+      const zz = z + (sd > 0 ? 7 : 0), x = sd * 7.4;
+      put('cafeTable', x, zz, 0, 1); put('cafeChair', x, zz - 0.95, 0, 1); put('cafeChair', x, zz + 0.95, PI, 1);
+    }
     for (const n of people) for (let i = 0; i < 2; i++) stateWalk(n, -100, 24, 1, walk(1.3));
     const walkAreas = [[-31, -12, -95, -73], [-70, -50, -95, -73], [13, 38, -55, 7], [-146, 146, 108.5, 117.5]];
     for (const [x0, x1, z0, z1] of walkAreas.slice(0, 3)) for (const n of people) scatter(n, 1, [x0 + 2, x1 - 2, z0 + 2, z1 - 2], 20, walk(1.3, 3));
@@ -528,9 +540,19 @@ export default {
     for (let i = 0; i < 2; i++) { sideWalker('dog'); sideWalker('dogB'); }
     for (let i = 0; i < 6; i++) stateWalk(pick(['dog', 'dogB']), -100, 24, 1, walk(1.6));
     for (const n of people) scatter(n, 1, [-15, 15, 106, 148], 20, walk(1.2, 2.2), (x) => Math.abs(x) > 8.5 && Math.abs(x) < 12);
-    for (const n of ['mailbox', 'hydrant', 'newsBox', 'trashCan', 'bike', 'bikeB', 'bikeC', 'bougM', 'bougP', 'bougO', 'agave', 'pottedPalm', 'phoneBooth', 'busShelter', 'kiosk', 'cafeChair'])
-      scatter(n, n === 'kiosk' || n === 'phoneBooth' || n === 'busShelter' ? 2 : 3, [-146, 146, -145, 88], 12);
-    scatter('roseRed', 5, [-146, 146, -146, -112], 10); scatter('rosePink', 5, [-146, 146, -146, -112], 10);
+    // Intersection corners: a hydrant / bin / news box / mailbox / bike rack / planter on each sidewalk corner (cycled), bus shelters
+    // and phone booths at a few corners, so small items sit where people expect them instead of lying around
+    const corner = ['hydrant', 'trashCan', 'newsBox', 'mailbox', 'bikeRack', 'bougP', 'trashCan', 'bougO'];
+    let ci = 0;
+    for (const sx of STREETS.filter((q) => q.ax === 'x' && q.name !== 'state')) for (const sz of STREETS.filter((q) => q.ax === 'z' && q.name !== 'state')) {
+      if (sz.c < -146 || sz.c > 146 || sz.a0 > sx.c || sz.a1 < sx.c || sx.a0 > sz.c || sx.a1 < sz.c) continue;
+      const dx = sz.A / 2 + 1.4, dz = sx.A / 2 + 1.4;
+      for (const [a, b] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        const n = corner[ci++ % corner.length];
+        put(n, sz.c + a * dx, sx.c + b * dz, undefined, 1);
+      }
+      if (ci % 5 === 0) put(pick(['busShelter', 'phoneBooth', 'kiosk']), sz.c + dx + 3.2, sx.c + dz, 0, 1);
+    }
     scatter('seagull', 4, [13, 38, -55, 7], 10, walk(1.6, 2.5));
     // Super Cucas patio
     for (let i = 0; i < 3; i++) put(['cafeTable', 'cafeTableC', 'cafeTableB'][i], -60 + (i - 1) * 3.6, -57.6, undefined, 1);

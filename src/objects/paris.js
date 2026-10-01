@@ -5,7 +5,7 @@ import { applyModelFinishes } from './ModelFinishes.js';
 import { TEXTURE_LAYERS } from './TextureLibrary.js';
 
 const C = {
-  cream: '#efe3c6', stone: '#e3d6b4', dstone: '#c4b28a', roof: '#6d7f99', droof: '#4d5d76', white: '#f6f4ee',
+  cream: '#efe3c6', stone: '#e3d6b4', dstone: '#c4b28a', roof: '#7f8892', droof: '#5a636e', white: '#f6f4ee',
   dark: '#2b2b2e', gray: '#8d949b', lgray: '#c3c8cc', chrome: '#dfe3e8', red: '#d9382b', blue: '#2f6fc4', navy: '#26356b',
   yellow: '#ffd21f', green: '#4aa552', lgreen: '#78c467', dgreen: '#2f7a3a', pink: '#f28fb1', brown: '#8a5a2b',
   dbrown: '#5e3d20', wood: '#c99a5b', skin: '#f1c8a0', tire: '#1f1f22', glass: '#a9dcf2', dglass: '#6fa7c4',
@@ -412,6 +412,60 @@ export function buildProtos() {
     cyl(0.03, 0.05, 0.16, C.dgreen, { surface: 'foliage', y: 0.87, x: -0.15, z: -0.1, segments: 8 }),
   ], { value: 1.0, radius: 0.9 });
 
+  // ---------- street furniture
+  add('hedge', [
+    rbox(1.8, 0.7, 0.7, '#3f8f4a', { surface: 'foliage', y: 0.35, segments: 1, bevel: 0.22 }),
+    ...[-0.55, 0, 0.55].map((x) => sphere(0.3, '#58a65a', { surface: 'foliage', x, y: 0.7, sy: 0.6, segments: 7, rings: 4, flat: false })),
+    box(1.9, 0.08, 0.8, '#7a6a4a', { surface: 'stone', y: 0.04 }),
+  ], { value: 0.3 });
+  add('bush', [
+    sphere(0.46, C.dgreen, { surface: 'foliage', y: 0.4, sy: 0.85, segments: 8, rings: 5, flat: false }),
+    sphere(0.34, C.green, { surface: 'foliage', x: 0.3, z: 0.15, y: 0.34, segments: 7, rings: 4, flat: false }),
+    sphere(0.3, C.lgreen, { surface: 'foliage', x: -0.25, z: -0.2, y: 0.34, segments: 7, rings: 4, flat: false }),
+    ...[[0.1, 0.78, 0.1, C.pink], [-0.2, 0.62, 0.15, C.white], [0.3, 0.6, -0.1, C.yellow]].map(([x, y, z, c]) => sphere(0.07, c, { x, y, z, segments: 5, rings: 3, flat: false })),
+  ], { value: 0.3 });
+  add('trashCan', [
+    cyl(0.26, 0.24, 0.9, '#2f6a4a', { surface: 'metal', y: 0.45, segments: 10 }),
+    cyl(0.28, 0.28, 0.06, C.iron, { surface: 'metal', y: 0.92, segments: 10 }),
+    cyl(0.2, 0.22, 0.34, '#e9f1f4', { surface: 'fabric', y: 1.1, segments: 8 }),
+    box(0.3, 0.06, 0.04, C.gold, { surface: 'metal', y: 0.6, z: 0.25 }),
+  ], { value: 0.2 });
+  add('bollard', [
+    cyl(0.12, 0.14, 0.75, C.iron, { surface: 'metal', y: 0.375, segments: 8 }),
+    sphere(0.13, C.iron, { surface: 'metal', y: 0.78, segments: 8, rings: 4, flat: false }),
+    cyl(0.145, 0.145, 0.06, C.gold, { surface: 'metal', y: 0.5, segments: 8 }),
+  ], { value: 0.12 });
+  add('ironFence', [
+    box(1.8, 0.05, 0.05, C.iron, { surface: 'metal', y: 0.2 }),
+    box(1.8, 0.05, 0.05, C.iron, { surface: 'metal', y: 0.85 }),
+    ...[0, 1, 2, 3, 4, 5, 6, 7, 8].flatMap((i) => [
+      box(0.035, 0.95, 0.035, C.iron, { surface: 'metal', x: -0.8 + i * 0.2, y: 0.48 }),
+      cone(0.04, 0.12, C.gold, { surface: 'metal', x: -0.8 + i * 0.2, y: 1.0, segments: 4 }),
+    ]),
+    ...[-0.9, 0.9].map((x) => box(0.09, 1.05, 0.09, C.iron, { surface: 'metal', x, y: 0.52 })),
+  ], { value: 0.25, radius: 0.9 });
+  add('planterBox', [
+    rbox(1.5, 0.45, 0.5, '#b9a98a', { surface: 'stone', y: 0.22, segments: 1, bevel: 0.06 }),
+    box(1.4, 0.04, 0.4, '#5a3a24', { surface: 'stucco', y: 0.46 }),
+    ...[-0.5, 0, 0.5].map((x) => sphere(0.25, C.dgreen, { surface: 'foliage', x, y: 0.62, sy: 0.8, segments: 7, rings: 4, flat: false })),
+    ...[[-0.5, C.pink], [0.05, C.yellow], [0.5, C.red], [-0.2, C.white]].map(([x, c], i) => sphere(0.09, c, { x, y: 0.88, z: i % 2 ? 0.1 : -0.08, segments: 5, rings: 3, flat: false })),
+  ], { value: 0.4 });
+  add('bikeRack', [
+    box(1.6, 0.06, 0.4, C.iron, { surface: 'metal', y: 0.03 }),
+    ...[-0.55, 0, 0.55].map((x) => torus(0.3, 0.03, C.lgray, { surface: 'metal', x, y: 0.3, radial: 4, segments: 10 })),
+    box(0.5, 0.25, 0.04, C.green, { surface: 'paint', x: 0.6, y: 0.85, z: 0.15 }),
+    box(0.04, 0.8, 0.04, C.iron, { surface: 'metal', x: 0.6, y: 0.4, z: 0.15 }),
+  ], { value: 0.4, radius: 0.8 });
+  add('planeTree', [
+    lathe([[0.2, 0], [0.14, 0.4], [0.12, 1.6], [0.1, 2.4]], '#b9b09a', { segments: 8, surface: 'wood' }),
+    cyl(0.07, 0.1, 1.2, '#a39a84', { y: 2.6, x: 0.35, rz: -0.6, segments: 6, surface: 'wood' }),
+    cyl(0.07, 0.1, 1.2, '#a39a84', { y: 2.6, x: -0.35, rz: 0.6, segments: 6, surface: 'wood' }),
+    sphere(1.5, '#7fb35a', { y: 3.9, sy: 0.75, segments: 9, rings: 6, surface: 'foliage' }),
+    sphere(1.1, '#6aa24e', { y: 3.5, x: 1.0, z: 0.3, segments: 8, rings: 5, surface: 'foliage' }),
+    sphere(1.1, '#6aa24e', { y: 3.5, x: -1.0, z: -0.3, segments: 8, rings: 5, surface: 'foliage' }),
+    sphere(0.9, '#8cc065', { y: 4.4, x: 0.2, z: 0.4, segments: 8, rings: 5, surface: 'foliage' }),
+  ], { value: 1.2, sway: 'tree' });
+
   // ---------- medium
   const umbChair = (x, z, ry) => at([
     box(0.4, 0.05, 0.4, '#c8663f', { surface: 'wood', y: 0.45 }),
@@ -588,11 +642,16 @@ export function buildProtos() {
       p.push(box(0.09, 0.9, 0.05, C.red, { surface: 'paint', y: 2.45, x: -4 + i, z: 1.27 }), box(0.09, 0.9, 0.05, C.red, { surface: 'paint', y: 2.45, x: -4 + i, z: -1.27 }));
     }
     return p;
-  })(), { value: 9 });
+  })(), { value: 5 });
 
-  add('houseA', haussmann(9, 7, 5, C.cream), { value: 9 });
-  add('houseB', haussmann(7, 6, 4, '#eadbb8', { awn: '#2f6fc4' }), { value: 9 });
-  add('houseC', haussmann(11, 7, 6, '#f1e7cf', { awn: '#2d5a48' }), { value: 12 });
+  // Haussmann block protos: one shared builder, a few widths / heights / colours so rows read as varied but continuous
+  add('houseA', haussmann(9, 7, 5, C.cream), { value: 1.7 });
+  add('houseB', haussmann(7, 7, 5, '#eadbb8', { awn: '#2f6fc4' }), { value: 1.2 });
+  add('houseC', haussmann(10, 7, 6, '#f1e7cf', { awn: '#2d5a48' }), { value: 2.2 });
+  add('houseD', haussmann(6, 7, 7, '#e9dcc0', { awn: '#c8663f' }), { value: 1.0 });
+  add('houseE', haussmann(8, 7, 6, '#f4ead2', { awn: '#8a2f3b' }), { value: 1.7 });
+  add('houseG', haussmann(6, 5.5, 5, '#efe4cb', { awn: '#2d5a48' }), { value: 0.8 });
+  add('houseF', haussmann(9, 7, 7, '#ece0c4', { awn: '#2f6fc4' }), { value: 2.0 });
 
   add('cathedral', (() => {
     const W = C.stone, D = C.dstone;

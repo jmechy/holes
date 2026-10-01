@@ -48,12 +48,12 @@ const HOUSE_ROWS = () => {
   const row = (xs, z, rotY) => xs.forEach((x) => out.push({ x, z, rotY }));
   const col = (x, zs, rotY) => zs.forEach((z) => out.push({ x, z, rotY }));
   row([-39, -26, -13, 13, 26, 39], 21, PI); // south of the main street, facing north
-  row([-39, -26, -13, 13, 26, 39], 55, 0); // north of the z=70 street, facing south
+  row([-39, -26, -13], 55, 0); // north of the z=70 street, facing south (shops take the east half)
   col(-79, [22, 34, 46, 58], PI / 2); // west block, facing the x=-60 street
-  col(79, [22, 34, 46, 58], -PI / 2); // east block
+  col(79, [34, 46, 58], -PI / 2); // east block (the gas station takes the corner)
   col(80, [-30, -44, -58], -PI / 2); // north-east, facing the x=60 street
-  col(-80, [-30, -44], PI / 2); // north-west
-  row([-98, -84, -46, -34, 34, 46, 84, 98], 93, PI); // south row, facing the z=70 street
+  col(-80, [-30, -44, -92, -104], PI / 2); // north-west
+  row([-98, -84, 34, 46, 84, 98], 93, PI); // south row, facing the z=70 street (the church stands at x=-40)
   // keep the police station, hospital and the two fire-scene streets clear, then add the scene neighbours by hand
   const clear = [[-114, -64, -82, -14], [64, 120, -100, -24], [-120, -64, 10, 55], [64, 120, 77, 120]];
   const kept = out.filter((h) => !clear.some(([x0, x1, z0, z1]) => h.x > x0 && h.x < x1 && h.z > z0 && h.z < z1));
@@ -199,6 +199,14 @@ export default {
     addDecal(merge(beds.yellow), '#f6cc3a');
     addDecal(merge(beds.red), '#e0463a');
 
+    // Park behind the station: pond, winding path, plaza; school playground; petrol forecourt; school + shop paths
+    addDecal(circle(0, -92, 8.5, 28), '#5fa6d8', { style: 'water' });
+    addDecal(merge([rect(0, -92, 44, 2.2), rect(0, -92, 2.2, 36)]), '#d3d0c6', { style: 'concrete' });
+    addDecal(merge([rect(0, 48, 28, 7), rect(0, 53, 2.4, 20)]), '#8f949b', { style: 'asphalt' });
+    addDecal(merge([rect(82, 19.5, 26, 18), rect(66, 4, 8, 6)]), '#62656b', { style: 'asphalt' });
+    addDecal(merge([rect(-40, 74, 8, 6), rect(-40, 80, 14, 5)]), '#d3d0c6', { style: 'concrete' });
+    addDecal(merge([rect(-32, 47, 17, 3), rect(32, 47, 17, 3), rect(-36, 45, 2.4, 6), rect(36, 45, 2.4, 6)]), '#d3d0c6', { style: 'concrete' });
+
     // --- Vehicle routes on the streets (right-hand lanes: the town loop exists in both directions)
     const pts = [[-60, 0], [60, 0], [60, 70], [-60, 70]];
     R.loopF = ctx.addRoute(pts, { loop: true, width: 8 });
@@ -234,11 +242,11 @@ export default {
     for (let z = -60; z < -28; z += 6) bays.push(rect(70, z + 1.5, 0.3, 3));
     addDecal(merge(bays), YELLOW);
     // curb parking along the loop roads, minus the mouths of the fire-scene streets and the hospital drive
-    const mouths = [[-66, -58, 27, 43], [58, 66, 92, 108], [60, 80, -62, -26]];
+    const mouths = [[-68, -52, 27, 43], [52, 68, 90, 110], [60, 80, -62, -26]];
     CURB = [
-      ...ctx.roadsideSpots(R.loopF, { side: 'right', spacing: 8, gap: 0.1 }),
-      ...ctx.roadsideSpots(R.loopR, { side: 'right', spacing: 8, gap: 0.1 }),
-      ...['w0', 'e0', 'w70', 'e70', 'wn', 'en', 'ws', 'es'].flatMap((k) => ctx.roadsideSpots(R[k], { side: 'right', spacing: 8, gap: 0.1 })),
+      ...ctx.roadsideSpots(R.loopF, { side: 'right', spacing: 8, gap: 1.3 }),
+      ...ctx.roadsideSpots(R.loopR, { side: 'right', spacing: 8, gap: 1.3 }),
+      ...['w0', 'e0', 'w70', 'e70', 'wn', 'en', 'ws', 'es'].flatMap((k) => ctx.roadsideSpots(R[k], { side: 'right', spacing: 8, gap: 1.3 })),
     ].filter((s) => !mouths.some(([x0, x1, z0, z1]) => s.x > x0 && s.x < x1 && s.z > z0 && s.z < z1));
   },
 
@@ -391,11 +399,104 @@ export default {
     scatter('tree', 12, [70, 115, -26, -8]);
     scatter('tree', 10, [70, 115, -112, -100]);
     scatter('tree', 5, [106, 116, -98, -28]);
-    scatter('bush', 14, [76, 92, -62, -27], 0.9, 1.1, 12);
+    scatter('bush', 8, [76, 92, -62, -27], 0.9, 1.1, 12);
 
     // --- Houses in neat rows facing the street
     const houseKinds = ['house', 'houseBlue', 'houseYellow'];
     HOUSES.forEach((h, i) => place(houseKinds[i % 3], h.x, h.z, h.rotY, 1, { move: null }));
+
+    // --- New town buildings: gas station, school, church, apartment blocks, a row of shops
+    const S0 = { move: null };
+    must('gas station', place('gasStation', 82, 19.5, PI, 1, S0));
+    must('school', place('school', 0, 38, 0, 1, S0));
+    must('church', place('church', -40, 95, PI, 1, S0));
+    must('apartment A', place('apartmentBrick', -32, 38, 0, 1, S0));
+    must('apartment B', place('apartmentCream', 32, 38, 0, 1, S0));
+    must('apartment C', place('apartmentBrick', -106, -100, PI / 2, 1, S0));
+    must('apartment D', place('apartmentCream', -106, -70, PI / 2, 1, S0));
+    must('apartment E', place('apartmentCream', 83, -109, -PI / 2, 1, S0));
+    const shopKinds = ['shopRed', 'shopBlue', 'shopGreen'];
+    const SHOPS = [{ x: 14, z: 55, rotY: 0 }, { x: 26, z: 55, rotY: 0 }, { x: 38, z: 55, rotY: 0 }, { x: 0, z: 21, rotY: PI }, { x: -70, z: 93, rotY: PI }];
+    SHOPS.forEach((h, i) => must('shop', place(shopKinds[i % 3], h.x, h.z, h.rotY, 1, S0)));
+
+    // helper: a point d in front of / l to the right of a building, and the line direction along its facade
+    const frame = (h) => { const f = [Math.sin(h.rotY), Math.cos(h.rotY)], r = [Math.cos(h.rotY), -Math.sin(h.rotY)]; return (d, l) => [h.x + f[0] * d + r[0] * l, h.z + f[1] * d + r[1] * l]; };
+    const putAt = (name, pt, rot, sc = 1) => put(name, pt[0], pt[1], rot, sc, S0);
+    // run of fence/hedge panels along a line with optional gaps (distances along the run)
+    const run = (name, x0, z0, x1, z1, gaps = [], step = 2.4) => {
+      const len = Math.hypot(x1 - x0, z1 - z0), dx = (x1 - x0) / len, dz = (z1 - z0) / len, yaw = yawOf(dx, dz);
+      const n = Math.max(1, Math.round(len / step)), st = len / n;
+      for (let i = 0; i < n; i++) {
+        const d = (i + 0.5) * st;
+        if (gaps.some((g) => Math.abs(d - g) < 1.9)) continue;
+        put(name, x0 + dx * d, z0 + dz * d, yaw, 1, S0);
+      }
+    };
+
+    // houses: picket fence along the pavement with a gate gap at the path, foundation hedges, flower pots by the door, a mailbox
+    HOUSES.forEach((h, i) => {
+      const at = frame(h);
+      const fence = i % 2 ? 'picketWood' : 'picket';
+      for (const l of [-4.0, 1.4, 3.8]) putAt(fence, at(7.8, l), h.rotY);
+      putAt('hedge', at(4.9, 2.9), h.rotY); putAt('hedge', at(4.9, -4.2), h.rotY);
+      putAt('planter', at(4.2, -2.9), 0); putAt('planter', at(4.2, 0.2), 0);
+      putAt('mailbox', at(8.6, -6.0), h.rotY + PI / 2);
+    });
+    // shops: café tables out front, flower pots either side of the door, a bike rack and a bin
+    SHOPS.forEach((h, i) => {
+      const at = frame(h);
+      putAt('cafeTable', at(6.8, -3), 0); putAt('cafeTable', at(6.8, 3.2), 0);
+      putAt('planter', at(4.9, 1.8), 0); putAt('planter', at(4.9, -1.5), 0);
+      putAt('trashcan', at(5.6, -5.4), 0);
+      if (i % 2 === 0) putAt('bikeRack', at(6.2, 5.2), h.rotY);
+    });
+    // outer apartment blocks: hedge frontage with a gap at the entrance, flower pots, benches
+    for (const h of [{ x: -106, z: -100, rotY: PI / 2 }, { x: -106, z: -70, rotY: PI / 2 }, { x: 83, z: -109, rotY: -PI / 2 }]) {
+      const at = frame(h), a = at(8.2, -8), b = at(8.2, 8);
+      run('hedge', a[0], a[1], b[0], b[1], [8]);
+      putAt('planter', at(6.6, -2.6), 0); putAt('planter', at(6.6, 2.6), 0);
+      putAt('bench', at(9.6, -5.5), h.rotY + PI); putAt('bench', at(9.6, 5.5), h.rotY + PI);
+      putAt('trashcan', at(6.8, 6.4), 0);
+    }
+    // apartments + school + church grounds
+    for (const x of [-32, 32]) {
+      run('hedge', x - 8, 46.6, x + 8, 46.6, [8]);
+      put('planter', x - 2.5, 44.6, 0, 1, S0); put('planter', x + 2.5, 44.6, 0, 1, S0);
+      put('bench', x - 6, 49.6, PI, 1, S0); put('bench', x + 6, 49.6, PI, 1, S0);
+    }
+    run('picket', -14, 52.6, 14, 52.6, [14]); run('picket', -14, 43.5, -14, 52.6); run('picket', 14, 43.5, 14, 52.6);
+    for (const x of [-12, 12]) put('bench', x, 50.2, PI, 1, S0);
+    put('planter', -2.8, 43.6, 0, 1, S0); put('planter', 2.8, 43.6, 0, 1, S0);
+    put('tree', -9, 29, undefined, 1, S0); put('tree', 9, 29, undefined, 1, S0); put('tree', -20, 30, undefined, 1, S0); put('tree', 20, 30, undefined, 1, S0);
+    // church yard: picket front with a gate, hedge sides and back, benches by the path, cemetery-free lawn trees
+    run('picketWood', -53, 80.6, -27, 80.6, [13]); run('hedge', -53, 80.6, -53, 108); run('hedge', -27, 80.6, -27, 108); run('hedge', -53, 108, -27, 108);
+    put('bench', -35, 83.6, 0, 1, S0); put('bench', -45, 83.6, 0, 1, S0);
+    put('planter', -41.8, 84.4, 0, 1, S0); put('planter', -38.2, 84.4, 0, 1, S0);
+    // gas station: bins, planters, hedge along the back, a parked car by the kiosk
+    run('hedge', 70, 29.4, 94, 29.4); put('trashcan', 72, 11.4, 0, 1, S0); put('trashcan', 92, 11.4, 0, 1, S0);
+    put('planter', 71, 27.8, 0, 1, S0); put('planter', 93, 27.8, 0, 1, S0); put('bench', 74.4, 13.4, 0, 1, S0);
+    // pond park behind the fire station: ring of benches, lamps, hedges, trees and flower pots
+    for (const [x, z, r] of [[-10.5, -92, 0], [10.5, -92, PI], [0, -82, -PI / 2], [0, -102, PI / 2]]) put('bench', x, z, r, 1, S0);
+    for (const [x, z] of [[-14, -85], [14, -85], [-14, -99], [14, -99], [-24, -70], [24, -70]]) put('streetlight', x, z, 0, 1, S0);
+    run('hedge', -28, -108, 28, -108); run('hedge', -28, -108, -28, -72); run('hedge', 28, -108, 28, -72);
+    for (const [x, z] of [[-19, -104], [19, -104], [-19, -80], [19, -80], [-6, -104], [6, -104]]) put('planter', x, z, 0, 1, S0);
+    for (const [x, z] of [[-22, -90], [22, -90], [-18, -96], [18, -96], [-18, -86], [18, -86], [-24, -103], [24, -103]]) put('tree', x, z, undefined, 1, S0);
+    for (const [x, z] of [[-8, -76], [8, -76], [0, -108.5]]) put('trashcan', x, z, 0, 1, S0);
+    // fire station frontage: hedge rows flanking the apron, lamps, bins and the station's own gear laid out along the wall
+    run('hedge', -22.4, -42, -22.4, -9); run('hedge', 22.4, -42, 22.4, -9);
+    for (const z of [-38, -26, -14]) { put('streetlight', -25.5, z, PI, 1, S0); put('streetlight', 25.5, z, 0, 1, S0); }
+    for (const x of [-27, 27]) { put('trashcan', x, -10.5, 0, 1, S0); put('bench', x, -33, x < 0 ? PI / 2 : -PI / 2, 1, S0); }
+    for (const x of [-12.5, -4, 4, 12.5]) put('extinguisher', x, -40.8, 0, 1, S0);
+    for (const x of [-16, 16]) { put('hosereel', x, -40.8, 0, 1, S0); put('ladder', x * 1.25, -41, 0, 1, S0); }
+    // street furniture: streetlights at regular spacing, hydrants every 24, bus stops
+    const lampLine = (x0, x1, z, step, arm) => { for (let x = x0; x <= x1; x += step) if (Math.abs(Math.abs(x) - 60) > 9) put('streetlight', x, z, yawOf(0, arm), 1, S0); };
+    lampLine(-110, 110, 6.9, 20, -1); lampLine(-100, 110, -6.9, 20, 1);
+    lampLine(-110, 110, 64.1, 20, 1); lampLine(-100, 110, 75.9, 20, -1);
+    for (let z = -110; z <= 112; z += 24) if (Math.abs(z) > 10 && Math.abs(z - 70) > 10) { put('streetlight', -66.4, z, 0, 1, S0); put('streetlight', 53.6, z + 12, PI, 1, S0); put('streetlight', 66.4, z + 12, PI, 1, S0); put('streetlight', -53.6, z, 0, 1, S0); }
+    for (let x = -108; x <= 108; x += 24) if (Math.abs(Math.abs(x) - 60) > 9) { put('hydrant', x + 6, 7.2, 0, 1, S0); put('hydrant', x - 6, -7.2, 0, 1, S0); put('hydrant', x + 6, 76.8, 0, 1, S0); }
+    for (let z = -100; z <= 100; z += 24) if (Math.abs(z) > 10 && Math.abs(z - 70) > 10) { put('hydrant', -66.8, z + 6, 0, 1, S0); put('hydrant', 66.8, z - 6, 0, 1, S0); }
+    put('busStop', -34, 7.4, PI, 1, S0); put('busStop', 36, -7.4, 0, 1, S0); put('busStop', -34, 76.4, 0, 1, S0); put('busStop', 36, 63.6, PI, 1, S0);
+    for (const [x, z] of [[-48, 8], [-48, -8], [48, 8], [48, -8], [-72, 8], [72, -8], [-72, 64], [72, 76], [-48, 76], [48, 64]]) put('trashcan', x, z, 0, 1, S0);
 
     // --- Fire vehicles lined up on the red apron, nose toward the station
     place('fireengine', -10, -30, PI / 2, 1);
@@ -437,57 +538,22 @@ export default {
     LOT_C.forEach((s) => { if (rand() < 0.65) ctx.placeParked(ctx.pick(cars), s); });
     CURB.forEach((s) => { if (rand() < 0.38) ctx.placeParked(ctx.pick(cars), s); });
 
-    // --- Trees, pines, benches, mailboxes, hydrants
-    blocks('tree', 55);
-    blocks('pine', 40);
-    scatter('tree', 15, ALL);
-    // benches sit on the pavement facing the street
+    // --- Trees and the odd bush, benches along the pavements
+    blocks('tree', 30);
+    blocks('pine', 18);
+    scatter('tree', 8, ALL);
     for (let x = -100; x <= 100; x += 20) {
       if (Math.abs(Math.abs(x) - 60) < 9) continue;
-      place('bench', x + 5, 6.9, PI, 1, { move: null });
-      place('bench', x - 5, -6.9, 0, 1, { move: null });
-      place('bench', x + 5, 76.9, PI, 1, { move: null });
-      place('bench', x - 5, 63.1, 0, 1, { move: null });
+      put('bench', x + 5, 6.9, PI, 1, S0); put('bench', x - 5, -6.9, 0, 1, S0);
+      put('bench', x + 5, 76.9, PI, 1, S0); put('bench', x - 5, 63.1, 0, 1, S0);
     }
-    blocks('mailbox', 35);
-    scatter('mailbox', 8, ALL);
-    // hydrants along the sidewalks
-    for (let x = -S + 5; x < S - 5; x += 8) {
-      if (rand() < 0.6) put('hydrant', x + randRange(-1, 1), 9 * (rand() < 0.5 ? 1 : -1), undefined, 1);
-    }
-    scatter('hydrant', 30, ALL, 0.9, 1.1, 12);
-
-    // --- Starter cluster around the spawn
-    const START = [-28, 28, -28, 28];
-    scatter('hydrant', 6, START, 0.9, 1.1, 12);
-    scatter('helmet', 8, START, 0.9, 1.1, 12);
-    scatter('cone', 10, START, 0.9, 1.1, 12);
-    scatter('firefighter', 5, START, 0.9, 1.1, 12);
-    scatter('extinguisher', 5, START, 0.9, 1.1, 12);
-    scatter('dalmatian', 4, START, 0.9, 1.1, 12);
-    scatter('medkit', 6, START, 0.9, 1.1, 12);
-    scatter('policecap', 4, START, 0.9, 1.1, 12);
-
-    // --- Small stuff everywhere; gear piled near the station
-    const APRON = [-38, 38, -42, -4];
-    scatter('helmet', 15, APRON, 0.9, 1.1, 12);
-    scatter('axe', 15, APRON, 0.9, 1.1, 12);
-    scatter('hosereel', 12, APRON, 0.9, 1.1, 12);
-    scatter('extinguisher', 10, APRON, 0.9, 1.1, 12);
-    scatter('ladder', 10, APRON, 0.9, 1.1, 12);
-    scatter('firefighter', 25, APRON, 0.9, 1.1, 12);
-    scatter('firefighter', 35, ALL, 0.9, 1.1, 12);
-    scatter('dalmatian', 25, ALL, 0.9, 1.1, 12);
-    scatter('helmet', 25, ALL, 0.9, 1.1, 12);
-    scatter('axe', 20, ALL, 0.9, 1.1, 12);
-    scatter('hosereel', 18, ALL, 0.9, 1.1, 12);
-    scatter('extinguisher', 25, ALL, 0.9, 1.1, 12);
-    scatter('ladder', 14, ALL, 0.9, 1.1, 12);
-    scatter('cone', 45, ALL, 0.9, 1.1, 12);
-    scatter('bush', 45, ALL, 0.9, 1.15, 12);
-    for (let x = -S + 6; x < S - 6; x += 6) {
-      place('cone', x + randRange(-1.5, 1.5), 7.4 + randRange(0, 0.4), undefined, 1);
-      place('cone', x + randRange(-1.5, 1.5), -7.4 - randRange(0, 0.4), undefined, 1);
-    }
+    // station crew: firefighters and dalmatians around the apron, a few more patrolling the lots and lawns
+    scatter('firefighter', 14, [-18, 18, -40, -8], 1, 1, 12);
+    scatter('dalmatian', 6, [-20, 20, -40, -8], 1, 1, 12);
+    scatter('firefighter', 10, [-50, 50, 8, 62], 1, 1, 12);
+    scatter('firefighter', 6, ALL, 1, 1, 12);
+    scatter('dalmatian', 5, [-50, 50, 8, 62], 1, 1, 12);
+    scatter('helmet', 6, [-18, 18, -40, -30], 1, 1, 12);
+    scatter('bush', 10, [-30, 30, -66, -60], 0.9, 1.1, 12);
   },
 };

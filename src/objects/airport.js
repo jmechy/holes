@@ -221,6 +221,59 @@ export function buildProtos() {
     ...wheel(-1.2, 0.25, 0.65, 0.25, 0.2), ...wheel(-1.2, 0.25, -0.65, 0.25, 0.2),
   ], { value: 1.0 });
 
+  // ---------- small airfield furniture (placed in orderly rows by the map) ----------
+  add('lamp', [
+    cyl(0.16, 0.2, 0.2, C.dgray, { y: 0.1, segments: 8 }),
+    cyl(0.07, 0.1, 3.2, C.gray, { y: 1.7, segments: 8 }),
+    box(0.9, 0.12, 0.3, C.dgray, { y: 3.35, x: 0.25 }),
+    box(0.7, 0.05, 0.22, '#fff3b0', { y: 3.27, x: 0.3, emissive: 1.2 }),
+  ], { value: 0.4 });
+  add('bollard', [
+    cyl(0.17, 0.17, 0.75, C.yellow, { y: 0.4, segments: 10 }),
+    cyl(0.18, 0.18, 0.1, C.dark, { y: 0.55, segments: 10 }),
+    sphere(0.17, C.yellow, { y: 0.78, sy: 0.5, segments: 10, rings: 4 }),
+  ], { value: 0.2 });
+  add('trashCan', [
+    cyl(0.34, 0.28, 0.85, C.dgreen, { y: 0.45, segments: 12 }),
+    cyl(0.37, 0.37, 0.1, C.dgray, { y: 0.92, segments: 12 }),
+    box(0.3, 0.05, 0.06, C.dark, { y: 0.7, x: 0.3 }),
+  ], { value: 0.3 });
+  add('bench', [
+    box(1.8, 0.1, 0.55, C.brown, { y: 0.5 }),
+    box(1.8, 0.45, 0.08, C.brown, { y: 0.8, z: -0.24, rx: -0.12 }),
+    box(0.1, 0.5, 0.5, C.dgray, { y: 0.25, x: 0.8 }), box(0.1, 0.5, 0.5, C.dgray, { y: 0.25, x: -0.8 }),
+  ], { value: 0.5 });
+  add('hedge', [
+    rbox(2.8, 0.9, 0.9, C.dgreen, { y: 0.45, bevel: 0.2, segments: 2, surface: 'foliage' }),
+    rbox(2.2, 0.35, 0.7, C.green, { y: 0.95, bevel: 0.15, segments: 2, surface: 'foliage' }),
+  ], { value: 0.6 });
+  add('bush', [
+    sphere(0.55, C.dgreen, { y: 0.5, sy: 0.85, segments: 10, rings: 7, surface: 'foliage' }),
+    sphere(0.38, C.green, { y: 0.55, x: 0.4, z: 0.2, segments: 8, rings: 5, surface: 'foliage' }),
+    sphere(0.34, C.green, { y: 0.45, x: -0.35, z: -0.25, segments: 8, rings: 5, surface: 'foliage' }),
+  ], { value: 0.3 });
+  add('fenceSeg', [
+    box(3.6, 0.5, 0.04, C.lgray, { y: 0.8, surface: 'metal', textureStrength: 0.3 }),
+    box(3.6, 0.06, 0.06, C.gray, { y: 1.1 }), box(3.6, 0.06, 0.06, C.gray, { y: 0.45 }),
+    ...[-1.8, 0, 1.8].map((x) => cyl(0.05, 0.05, 1.2, C.gray, { y: 0.6, x, segments: 6 })),
+  ], { value: 0.7 });
+  add('trolley', [
+    ...[0.38, -0.38].map((z) => box(1.0, 0.04, 0.04, C.silver, { y: 0.9, z })),
+    box(0.04, 0.6, 0.8, C.silver, { y: 0.55, x: -0.5 }), box(1.0, 0.04, 0.8, C.silver, { y: 0.28 }),
+    box(0.9, 0.04, 0.8, C.gray, { y: 0.55 }),
+    ...[0.35, -0.35].flatMap((z) => [0.4, -0.4].map((x) => cyl(0.07, 0.07, 0.06, C.tire, { y: 0.07, x, z, rx: PI / 2, segments: 8 }))),
+  ], { value: 0.35 });
+  add('gpu', [
+    rbox(1.1, 0.8, 0.7, C.orange, { y: 0.6, segments: 1, bevel: 0.08, surface: 'paint' }),
+    box(0.5, 0.2, 0.4, C.dark, { y: 1.1, x: -0.1 }),
+    ...wheel(0.4, 0.15, 0.4, 0.15, 0.1), ...wheel(0.4, 0.15, -0.4, 0.15, 0.1),
+    box(0.8, 0.04, 0.04, C.dark, { y: 0.4, x: 0.9 }),
+  ], { value: 0.6 });
+  add('windsock', [
+    cyl(0.07, 0.1, 4.0, C.silver, { y: 2.0, segments: 8 }),
+    ...[0, 1, 2, 3].map((i) => cyl(0.45 - i * 0.08, 0.5 - i * 0.08, 0.5, i % 2 ? C.white : C.orange, { y: 3.9, x: 0.35 + i * 0.5, rz: PI / 2, segments: 10 })),
+  ], { value: 0.8 });
+
   add('tug', [
     rbox(3.4, 0.5, 1.6, C.red, { y: 0.6, segments: 1, bevel: 0.12 }),
     rbox(1.4, 1.1, 1.5, C.red, { y: 1.4, x: 0.6, segments: 1, bevel: 0.15 }),
@@ -351,30 +404,35 @@ export function buildProtos() {
   ], { value: 6 });
 
   // propeller plane
-  add('propplane', (() => {
+  const prop = (body, accent, wingC) => (() => {
     const len = 8, fr = 0.75, span = 10.5, gear = 0.55, y0 = gear + fr;
     return [
-      lathe([[0.1, 0], [0.3, 0.6], [0.6, 1.6], [fr, 3.0], [fr, 5.2], [fr * 0.92, 6.2], [fr * 0.6, 7.2], [0.4, 8]], C.yellow, { x: -len / 2, y: y0, rz: -PI / 2, segments: 14 }),
-      cyl(fr * 1.01, fr * 1.01, 3.2, C.red, { y: y0 - 0.05, x: -0.2, rz: PI / 2, sx: 0.25, segments: 14 }),
+      lathe([[0.1, 0], [0.3, 0.6], [0.6, 1.6], [fr, 3.0], [fr, 5.2], [fr * 0.92, 6.2], [fr * 0.6, 7.2], [0.4, 8]], body, { x: -len / 2, y: y0, rz: -PI / 2, segments: 14 }),
+      cyl(fr * 1.01, fr * 1.01, 3.2, accent, { y: y0 - 0.05, x: -0.2, rz: PI / 2, sx: 0.25, segments: 14 }),
       // cowling + spinner + propeller
       cyl(fr * 0.9, fr * 0.8, 0.9, C.silver, { y: y0, x: len / 2 + 0.2, rz: PI / 2, segments: 14 }),
-      cone(0.28, 0.6, C.red, { y: y0, x: len / 2 + 0.95, rz: -PI / 2, segments: 12 }),
+      cone(0.28, 0.6, accent, { y: y0, x: len / 2 + 0.95, rz: -PI / 2, segments: 12 }),
       extrude([[-0.08, -1.7], [0.08, -1.7], [0.14, 0], [0.08, 1.7], [-0.08, 1.7], [-0.14, 0]], 0.05, C.dark, { y: y0, x: len / 2 + 0.72, ry: PI / 2, rz: 0.3, segments: 1 }),
       extrude([[-0.08, -1.7], [0.08, -1.7], [0.14, 0], [0.08, 1.7], [-0.08, 1.7], [-0.14, 0]], 0.05, C.dark, { y: y0, x: len / 2 + 0.72, ry: PI / 2, rz: 0.3 + PI / 2, segments: 1 }),
       // canopy
       sphere(0.6, C.dglass, { y: y0 + 0.55, x: 0.5, sx: 1.5, sy: 0.7, sz: 0.85, segments: 10, rings: 7 }),
       // high wing with struts, tail
-      ...wingPair([[0.9, fr * 0.6], [0.7, span / 2], [-0.6, span / 2], [-0.8, fr * 0.6]], 0.14, y0 + fr + 0.35, C.white),
+      ...wingPair([[0.9, fr * 0.6], [0.7, span / 2], [-0.6, span / 2], [-0.8, fr * 0.6]], 0.14, y0 + fr + 0.35, wingC),
       box(0.1, 1.3, 0.1, C.gray, { y: y0 + 0.4, x: 0.5, z: 1.9, rx: 0.5 }), box(0.1, 1.3, 0.1, C.gray, { y: y0 + 0.4, x: 0.5, z: -1.9, rx: -0.5 }),
-      extrude([[0, 0], [1.3, 0], [0.6, 1.5], [0.1, 1.5]], 0.12, C.red, { y: y0 + 0.2, x: -len / 2 + 0.2, bevel: 0.01, segments: 1 }),
-      ...wingPair([[-3.0, 0.3], [-3.6, 2.0], [-3.9, 2.0], [-3.8, 0.3]], 0.1, y0 + 0.15, C.white),
+      extrude([[0, 0], [1.3, 0], [0.6, 1.5], [0.1, 1.5]], 0.12, accent, { y: y0 + 0.2, x: -len / 2 + 0.2, bevel: 0.01, segments: 1 }),
+      ...wingPair([[-3.0, 0.3], [-3.6, 2.0], [-3.9, 2.0], [-3.8, 0.3]], 0.1, y0 + 0.15, wingC),
       // gear with spats
       cyl(0.06, 0.06, 0.9, C.gray, { y: 0.55, x: 1.0, z: 0.7, rx: 0.3, segments: 8 }), cyl(0.06, 0.06, 0.9, C.gray, { y: 0.55, x: 1.0, z: -0.7, rx: -0.3, segments: 8 }),
       ...wheel(1.0, 0.3, 0.95, 0.3, 0.18), ...wheel(1.0, 0.3, -0.95, 0.3, 0.18),
       ...wheel(-3.6, 0.15, 0, 0.15, 0.1),
       box(0.4, 0.3, 0.05, C.dglass, { y: y0 + 0.3, x: 0.0, z: 0.75 }), box(0.4, 0.3, 0.05, C.dglass, { y: y0 + 0.3, x: 0.0, z: -0.75 }),
     ];
-  })(), { value: 7 });
+  })();
+
+  // small planes in several liveries: [fuselage, stripe/tail/spinner, wings]
+  [['propplane', C.yellow, C.red, C.white], ['propplaneRed', C.red, C.white, C.white], ['propplaneBlue', C.blue, C.yellow, C.white],
+    ['propplaneGreen', C.green, C.white, C.white], ['propplaneOrange', C.orange, C.navy, C.white], ['propplanePurple', C.purple, C.white, C.silver],
+    ['propplaneTeal', C.white, C.teal, C.white]].forEach(([n, b, ac, w]) => add(n, prop(b, ac, w), { value: 7 }));
 
   add('bizjet', (() => {
     const p = plane({ len: 15, fr: 1.05, span: 13, engines: [], er: 0.6, body: C.white, stripe: C.navy, tail: C.navy, winglets: true });

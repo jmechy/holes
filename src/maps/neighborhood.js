@@ -201,44 +201,70 @@ export default {
     }
     for (const [x, z] of [[5.6, -RA - 5.6], [-5.6, RA + 5.6], [RA + 5.6, 5.6], [-RA - 5.6, -5.6], [5.6, -RB + 5.6], [-5.6, RB - 5.6], [RB - 5.6, -5.6], [-RB + 5.6, 5.6]]) place('trafficLight', x, z, 0, 1);
     for (const [x, z] of [[-6, -RA - 6], [6, RA + 6], [RA + 6, -6], [-RA - 6, 6]]) place('stopSign', x, z, 0, 1);
-    for (let i = 0; i < 10; i++) { const s = pick(SIDE_A.concat(SIDE_B)); if (s) place('warnSign', s.x + 0, s.z + 0, undefined, 1); }
-    scatterBand('hydrant', 12); scatterBand('mailbox', 16); scatterBand('trashCan', 14); scatterBand('dumpster', 6); scatterBand('barrier', 14);
-    scatterPark('bench', 12); scatterPark('trashCan', 8);
+    // Hydrants at the connector corners (both curbs of every connector street, both rings), a dumpster pair behind the lot
+    for (const R of [RA, RB]) for (const [sx, sz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) for (const o of [-1, 1]) {
+      const px = sx * (R + 6.2) + (sx === 0 ? o * (RW / 2 + 1.6) : 0), pz = sz * (R + 6.2) + (sz === 0 ? o * (RW / 2 + 1.6) : 0);
+      if (o === 1) place('hydrant', px, pz, undefined, 1);
+    }
+    place('dumpster', -14, 40.5, 0, 1); place('dumpster', 14, 40.5, 0, 1);
 
-    // --- Trees: backyards, park, outer hedge row
-    const treeNames = ['treeA', 'treeB', 'treeC', 'treeD', 'treeE', 'treeF', 'treeBlossom', 'treeAutumn', 'pine', 'pineRound', 'suburbTree'];
-    for (const n of treeNames) { scatterBand(n, 5); scatterPark(n, 2); }
+    // --- Park: paths are lined with flowers, bins and benches at regular intervals (nothing random)
+    const flowers = ['flowerRed', 'flowerYellow', 'flowerPurple', 'flowerRed2', 'flowerYellow2', 'flowerPurple2'];
+    let fi = 0;
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      for (let t = 6; t <= 33; t += 3) for (const sd of [-1, 1]) {
+        const px = dx * t + (dz !== 0 ? sd * 2.9 : 0), pz = dz * t + (dx !== 0 ? sd * 2.9 : 0);
+        place(flowers[fi++ % 6], px, pz, undefined, 1);
+      }
+      for (const t of [11, 25]) { // bin + shrub pair
+        place('trashCan', dx * t + (dz !== 0 ? 3.6 : 0), dz * t + (dx !== 0 ? 3.6 : 0), undefined, 1);
+        place('bushSmall', dx * t + (dz !== 0 ? -3.6 : 0), dz * t + (dx !== 0 ? -3.6 : 0), undefined, 1);
+      }
+      place('bench', dx * 18 + (dz !== 0 ? 3.9 : 0), dz * 18 + (dx !== 0 ? 3.9 : 0), dx !== 0 ? Math.PI : -Math.PI / 2 * (dz > 0 ? 1 : -1) + Math.PI, 1);
+      place('bench', dx * 30 + (dz !== 0 ? -3.9 : 0), dz * 30 + (dx !== 0 ? -3.9 : 0), dx !== 0 ? 0 : Math.PI / 2 * (dz > 0 ? 1 : -1) + Math.PI, 1);
+      place('streetLight', dx * 14 + (dz !== 0 ? -4.5 : 0), dz * 14 + (dx !== 0 ? -4.5 : 0), 0, 1);
+      place('streetLightCurved', dx * 28 + (dz !== 0 ? 4.5 : 0), dz * 28 + (dx !== 0 ? 4.5 : 0), 0, 1);
+    }
+    // diagonal paths: a bench at each outer end
+    for (const [x, z] of [[24, 24], [-24, 24], [24, -24], [-24, -24]]) { place('bench', x + 2.4, z - 2.4, Math.PI * 0.75, 1); place('trashCan', x - 2.4, z + 2.4, undefined, 1); }
+    // flower beds: the planted 2x4 block already drawn at (14..20, 14..16)
+    for (let i = 0; i < 8; i++) place(flowers[i % 6], 14 + (i % 4) * 2.4, 14 + Math.floor(i / 4) * 2.4, undefined, 1);
+    // pond: shrubs around the shore with benches facing the water and rocks at the north bank
+    for (let a = 0; a < 14; a++) { const t = a / 14 * Math.PI * 2; if (a % 4 === 1) continue; place(a % 2 ? 'bushSmall' : 'bush', -22 + Math.cos(t) * 13.4, 20 + Math.sin(t) * 13.4, undefined, 1); }
+    for (const t of [0.6, 2.2, 4.0]) place('bench', -22 + Math.cos(t) * 15.2, 20 + Math.sin(t) * 15.2, -t + Math.PI / 2 + Math.PI, 1);
+    for (const [x, z] of [[-26, 6.4], [-20, 6.8]]) place('rockLarge', x, z, undefined, 1);
+    for (const [x, z] of [[-31, 8.5], [-16.5, 7.5], [-14, 9.4]]) place('rockSmall', x, z, undefined, 1);
+    // picnic / camp corner: logs and stumps around the fire, benches by the tents
+    for (let a = 0; a < 5; a++) { const t = a * 1.2566 + 0.3; place(a % 2 ? 'stump' : 'log', 26.5 + Math.cos(t) * 3.2, -18 + Math.sin(t) * 3.2, t + Math.PI / 2, 1); }
+    place('bench', 20, -18, Math.PI / 2 + Math.PI, 1); place('trashCan', 21, -16, undefined, 1);
+    place('bench', -21, -20, Math.PI / 2 + Math.PI, 1); place('trashCan', -22, -18, undefined, 1);
+
+    // --- House yards: every lot gets the same orderly kit (mailbox + bin at the curb, shrubs flanking the drive, flowers, a gnome or pot)
+    const yard = (l, d, lat) => { const fx = Math.sin(l.rot), fz = Math.cos(l.rot); return [l.x + fx * d + fz * lat, l.z + fz * d - fx * lat]; };
+    houseLots().forEach((l, i) => {
+      let [x, z] = yard(l, 8.9, 3.6); place('mailbox', x, z, l.rot, 1);
+      if (i % 5 !== 2) { [x, z] = yard(l, 8.9, -3.7); place('trashCan', x, z, undefined, 1); }
+      for (const sd of [-1, 1]) for (const k of [0, 1]) { [x, z] = yard(l, 6.7, sd * (3.7 + k * 1.3)); place(i % 3 === 0 ? 'bush' : 'bushSmall', x, z, undefined, 1); }
+      for (const sd of [-1, 1]) { [x, z] = yard(l, 7.7, sd * (5.8 + (i % 2))); place(flowers[(i + (sd > 0 ? 1 : 0)) % 6], x, z, undefined, 1); }
+      if (i % 3 === 1) { [x, z] = yard(l, 6.4, 2.6); place('flowerPot', x, z, undefined, 1); }
+      if (i % 4 === 3) { [x, z] = yard(l, 7.4, -5.8); place('gnome', x, z, l.rot, 1); }
+      if (i % 3 === 0) { [x, z] = yard(l, -8.8, (i % 2 ? 1 : -1) * 4); place(pick(['bushLarge', 'bushDetailed']), x, z, undefined, 1); }
+    });
+
+    // --- Trees: one per backyard behind most houses, a few along the park rim and outer hedge row
+    const treeNames = ['treeA', 'treeB', 'treeC', 'treeD', 'treeE', 'treeF', 'treeBlossom', 'treeAutumn', 'pine', 'pineRound', 'suburbTree', 'treeSmall', 'suburbTreeSmall'];
+    houseLots().forEach((l, i) => { if (i % 4 !== 3) { const [x, z] = yard(l, -9.5, ((i * 7) % 5 - 2) * 1.6); place(treeNames[i % treeNames.length], x, z, undefined, 1); } });
+    for (const a of [-30, -10, 10, 30]) for (const [x, z] of [[a, -36], [a, 36], [-36, a], [36, a]]) place(treeNames[Math.abs(a + x) % 9], x, z, undefined, 1);
     for (let i = 0; i < 8; i++) scatter(pick(treeNames), 1, [106, 116, -114, 114]); // outer rows
     for (let i = 0; i < 8; i++) scatter(pick(treeNames), 1, [-114, 114, 106, 116]);
-    scatterBand('treeSmall', 14); scatterBand('suburbTreeSmall', 10); scatterPark('treeSmall', 6);
 
-    // --- Backyard fences + planters + rocks
-    for (const z of [-72, 72]) for (let x = -90; x <= 90; x += 9.2) if (Math.abs(x) > 8) place('picketFence', x, z, 0, 1);
-    for (const x of [-72, 72]) for (let z = -90; z <= 90; z += 9.2) if (Math.abs(z) > 8) place('picketFence', x, z, Math.PI / 2, 1);
-    scatterBand('fenceLow', 14); scatterBand('fenceYard', 12); scatterBand('planter', 16); scatterBand('rockLarge', 8); scatterBand('rockTall', 6);
-    scatterBand('bushLarge', 14); scatterBand('bushDetailed', 18); scatterPark('bushDetailed', 6); scatterPark('bushLarge', 4);
-    scatterBand('log', 8); scatterBand('stump', 8);
+    // --- Backyard fences: continuous picket lines along the property lines between the two house rows
+    for (const z of [-72, 72]) for (let x = -92; x <= 92; x += 4.5) if (Math.abs(x) > 8) place('picketFence', x, z, 0, 1);
+    for (const x of [-72, 72]) for (let z = -92; z <= 92; z += 4.5) if (Math.abs(z) > 8) place('picketFence', x, z, Math.PI / 2, 1);
 
     // --- People
     for (const n of ['personA', 'personB', 'personC', 'personD', 'personE', 'personF']) { scatterBand(n, 7); scatterPark(n, 4); }
 
-    // --- Starter cluster: many tiny things near spawn (r <= 0.9) -----------------------------------------------------------
-    const ring = (name, n) => {
-      for (let i = 0; i < n; i++) for (let t = 0; t < 12; t++) {
-        const a = rand() * Math.PI * 2, d = randRange(5.5, 26);
-        if (put(name, Math.cos(a) * d, Math.sin(a) * d, undefined, 1)) break;
-      }
-    };
-    for (const n of ['flowerRed', 'flowerYellow', 'flowerPurple', 'flowerRed2', 'flowerYellow2', 'flowerPurple2']) ring(n, 5);
-    for (const [n, c] of [['mushroomRed', 5], ['mushroomTan', 5], ['pumpkin', 4], ['melon', 3], ['carrot', 5], ['rockSmall', 4], ['stoneSmall', 4], ['trafficCone', 5],
-      ['cardboardBox', 3], ['tire', 3], ['nut', 4], ['bolt', 4], ['grassTuft', 6], ['bushSmall', 3], ['soccerBall', 4], ['gnome', 3], ['flowerPot', 3]]) ring(n, c);
-
-    // --- Small stuff everywhere (park gets extra)
-    const smalls = [['flowerRed', 18], ['flowerYellow', 18], ['flowerPurple', 18], ['flowerRed2', 14], ['flowerYellow2', 14], ['flowerPurple2', 14],
-      ['mushroomRed', 14], ['mushroomTan', 14], ['pumpkin', 10], ['melon', 8], ['carrot', 14], ['rockSmall', 14], ['rockFlat', 12], ['stoneSmall', 12], ['stoneSmall2', 12],
-      ['trafficCone', 18], ['cardboardBox', 14], ['tire', 10], ['nut', 14], ['bolt', 14], ['grassTuft', 26], ['bushSmall', 18], ['bush', 16], ['soccerBall', 14],
-      ['gnome', 14], ['flowerPot', 12], ['woodSign', 8]];
-    for (const [n, c] of smalls) { scatterBand(n, Math.round(c * 0.6)); scatterPark(n, Math.ceil(c * 0.3)); }
   },
 };
 

@@ -1,5 +1,5 @@
 // Playful Venice: buildings face +Z, boats travel toward +X.
-import { box, rbox, cyl, cone, sphere, torus, lathe, extrude, makeProto } from './build.js';
+import { box, rbox, cyl, cone, sphere, torus, lathe, extrude, makeProto, articulate } from './build.js';
 import { facadeWall, recessedWindow } from './ModelDetails.js';
 import { applyModelFinishes } from './ModelFinishes.js';
 
@@ -9,6 +9,7 @@ const C = {
   red: '#ec6963', blue: '#52a8be', green: '#6f977c', white: '#fff7e4',
 };
 const PI = Math.PI;
+export const HOUSE_NAMES = [];
 const round = { segments: 10, rings: 6, flat: false };
 
 const arch = (w, h) => {
@@ -21,76 +22,92 @@ const arch = (w, h) => {
   return p;
 };
 
-const palazzo = (w, h, d, color, awning = C.red, style = {}) => {
-  const far = style.detail === 'far';
-  const shutter = style.shutterColor ?? C.green;
-  const columns = Math.max(3, Math.floor(w / 1.8)), openings = [];
-  for (let floor = 0; floor < 3; floor++) for (let k = 0; k < columns; k++) {
-    openings.push({ x: -w / 2 + (k + 0.5) * w / columns, y: 3.5 + floor * (h - 4) / 3, width: 0.9, height: 1.45 });
+const ROW_Y = [1.9, 4.5, 7.2, 9.9, 12.6];
+const pointedRing = (r) => [[-r, 0], [-r, r * 0.55], [0, r * 1.55], [r, r * 0.55], [r, 0],
+  [r - 0.14, 0], [r - 0.14, r * 0.5], [0, r * 1.3], [-r + 0.14, r * 0.5], [-r + 0.14, 0]];
+const archSpandrels = (r) => {
+  const left = [[-r, 0]];
+  for (let i = 1; i <= 6; i++) { const a = PI - i * PI / 12; left.push([Math.cos(a) * r, Math.sin(a) * r]); }
+  left.push([-r, r]);
+  return left;
+};
+
+/** Venetian townhouse: n storeys (3-5), pastel stucco, arched / gothic windows, terracotta roof with chimneys. Faces +Z. */
+const townhouse = (s) => {
+  const { w, d, n, color, far = false } = s;
+  const trim = s.trim ?? C.cream, shutter = s.shutter ?? C.green;
+  const h = ROW_Y[n - 1] + 2;
+  const columns = Math.max(2, Math.round(w / 1.9));
+  const doorCol = Math.floor(columns / 2);
+  const colX = (k) => -w / 2 + (k + 0.5) * w / columns;
+  const openings = [], backOpenings = [];
+  for (let row = 0; row < n; row++) for (let k = 0; k < columns; k++) {
+    const o = { x: colX(k), y: ROW_Y[row], width: 0.9, height: row ? 1.5 : 1.2 };
+    backOpenings.push(o);
+    if (!(row === 0 && k === doorCol)) openings.push(o);
   }
   const p = [box(w - 0.36, h, d - 0.7, color, { y: h / 2, surface: 'stucco' }),
     ...[-1, 1].map(side => box(0.18, h, d - 0.36, color, { x: side * (w / 2 - 0.09), y: h / 2, surface: 'stucco' })),
-    ...[-1, 1].flatMap(side => facadeWall(w, h, 0.18, color, openings, { z: side * (d / 2 - 0.09), ry: side < 0 ? PI : 0, surface: 'stucco' })),
+    ...facadeWall(w, h, 0.18, color, openings, { z: d / 2 - 0.09, surface: 'stucco' }),
+    ...facadeWall(w, h, 0.18, color, backOpenings, { z: -(d / 2 - 0.09), ry: PI, surface: 'stucco' }),
     box(w + 0.3, 0.35, d + 0.3, C.stone, { y: 0.175, surface: 'stone' }),
-    box(w + 0.5, 0.22, d + 0.5, C.cream, { y: h, surface: 'stone' }),
-    extrude([[-d / 2 - 0.2, 0], [d / 2 + 0.2, 0], [0, 1.7]], w + 0.5, C.roof, { y: h + 0.1, ry: PI / 2, surface: 'roof', textureRotation: PI / 2 }),
-    box(0.5, 1.2, 0.6, C.brick, { x: w * 0.28, z: -d * 0.2, y: h + 1.2 }),
-    extrude(arch(1.35, 2.3), 0.08, C.dark, { z: d / 2 + 0.045, y: 0.25 }),
-    box(2.9, 0.1, 1.1, awning, { y: 2.9, z: d / 2 + 0.48, rx: 0.12, surface: 'fabric' }),
-    box(2.9, 0.3, 0.1, awning, { y: 2.67, z: d / 2 + 1, surface: 'fabric' }),
+    box(w + 0.5, 0.22, d + 0.5, trim, { y: h, surface: 'stone' }),
+    extrude([[-d / 2 - 0.25, 0], [d / 2 + 0.25, 0], [0, 1.7 + (d - 5) * 0.12]], w + 0.5, s.roof ?? C.roof, { y: h + 0.1, ry: PI / 2, surface: 'roof', textureRotation: PI / 2 }),
+    // Door with a stone surround; waterside step.
+    extrude(arch(1.7, 2.5), 0.06, trim, { x: colX(doorCol), z: d / 2 + 0.03, y: 0.3 }),
+    extrude(arch(1.35, 2.3), 0.09, C.dark, { x: colX(doorCol), z: d / 2 + 0.06, y: 0.3 }),
   ];
-  for (const side of [-1, 1]) for (let floor = 0; floor < 3; floor++) for (let k = 0; k < columns; k++) {
-    const x = -w / 2 + (k + 0.5) * w / columns;
-    const y = 3.5 + floor * (h - 4) / 3;
+  for (let c = 0; c < (s.chimneys ?? 1); c++) {
+    const cx = (c ? -1 : 1) * w * 0.27;
+    p.push(box(0.55, 1.5, 0.65, C.brick, { x: cx, z: -d * 0.18, y: h + 1.45, surface: 'brick' }), box(0.78, 0.14, 0.88, C.stone, { x: cx, z: -d * 0.18, y: h + 2.25 }));
+  }
+  if (s.awning) p.push(box(2.9, 0.1, 1.1, s.awning, { x: colX(doorCol), y: 2.95, z: d / 2 + 0.5, rx: 0.12, surface: 'fabric' }),
+    box(2.9, 0.3, 0.1, s.awning, { x: colX(doorCol), y: 2.72, z: d / 2 + 1.03, surface: 'fabric' }));
+  if (s.altana) {
+    const ax = -w * 0.2, az = d * 0.1, ay = h + 1.55;
+    p.push(box(2.2, 0.1, 1.6, C.wood, { x: ax, z: az, y: ay, surface: 'wood' }),
+      ...[[-1, -0.7], [1, -0.7], [-1, 0.7], [1, 0.7]].map(([x, z]) => box(0.08, 1.7, 0.08, C.wood, { x: ax + x, z: az + z, y: ay - 0.8, surface: 'wood' })),
+      box(2.5, 0.08, 1.9, C.wood, { x: ax, z: az, y: ay + 1.0, surface: 'wood' }));
+  }
+  for (let row = 0; row < n; row++) for (let k = 0; k < columns; k++) {
+    const x = colX(k), y = ROW_Y[row], wh = row ? 1.5 : 1.2;
+    // Back pane: always the cheap version.
+    p.push(box(0.68, wh - 0.22, 0.018, C.glass, { x, y, z: -(d / 2 - 0.279) + 0.0, surface: 'glass' }));
+    if (row === 0 && k === doorCol) continue;
     if (far) {
-      // Pane remains well inside the real opening; far LOD skips jambs, mullions and shutters.
-      p.push(box(0.68, 1.23, 0.018, C.glass, { x, y, z: side * (d / 2 - 0.279), surface: 'glass' }));
-    } else {
-      p.push(...recessedWindow(0.9, 1.45, 0.18, { x, y, z: side * (d / 2 - 0.09), ry: side < 0 ? PI : 0, frameColor: style.frameColor ?? C.cream, glassColor: C.glass, mullion: style.mullions !== false }));
-      for (const s of [-1, 1]) {
-        const shutterX = x + s * 0.61;
-        p.push(box(0.22, 1.15, 0.08, shutter, { x: shutterX, y: y + 0.58, z: side * (d / 2 + 0.08), surface: 'wood' }));
-        if (style.louvered) for (let slat = 0; slat < 4; slat++) {
-          p.push(box(0.18, 0.025, 0.085, style.louverColor ?? C.wood, { x: shutterX, y: y + 0.2 + slat * 0.22, z: side * (d / 2 + 0.08), surface: 'wood' }));
-        }
-      }
-      if (side === 1 && style.balconies && floor === 1 && (style.balconies === 'all' || k % 2 === 0)) {
-        const balconyColor = style.balconyColor ?? C.cream, bz = d / 2 + 0.27, width = 1.25;
-        p.push(box(width, 0.075, 0.48, balconyColor, { x, y: y - 0.77, z: bz, surface: 'stone' }),
-          box(width, 0.045, 0.045, balconyColor, { x, y: y - 0.45, z: d / 2 + 0.47, surface: 'metal' }));
-        for (const dx of [-0.52, -0.26, 0, 0.26, 0.52]) p.push(box(0.035, 0.32, 0.035, balconyColor, { x: x + dx, y: y - 0.61, z: d / 2 + 0.47, surface: 'metal' }));
-      }
+      p.push(box(0.68, wh - 0.22, 0.018, C.glass, { x, y, z: d / 2 - 0.279, surface: 'glass' }));
+      continue;
+    }
+    p.push(...recessedWindow(0.9, wh, 0.18, { x, y, z: d / 2 - 0.09, frameColor: trim, glassColor: C.glass, mullion: true }));
+    if (s.shutters !== false && row) for (const sd of [-1, 1]) p.push(box(0.22, wh - 0.3, 0.08, shutter, { x: x + sd * 0.61, y, z: d / 2 + 0.08, surface: 'wood' }));
+    if (s.windows === 'arch' && row) {
+      for (const sd of [-1, 1]) p.push(extrude(archSpandrels(0.45).map(([a, b]) => [a * sd, b]), 0.06, color, { x, y: y + wh / 2 - 0.45, z: d / 2 + 0.03 }));
+    }
+    if (s.windows === 'gothic' && row >= 1) p.push(extrude(pointedRing(0.5), 0.1, trim, { x, y: y + wh / 2 - 0.06, z: d / 2 + 0.07 }));
+    if (s.balcony && row === 1 && (s.balcony === 'all' || k % 2 === 0)) {
+      const bz = d / 2 + 0.27;
+      p.push(box(1.25, 0.075, 0.48, trim, { x, y: y - 0.77, z: bz, surface: 'stone' }), box(1.25, 0.045, 0.045, trim, { x, y: y - 0.45, z: d / 2 + 0.47, surface: 'metal' }));
+      for (const dx of [-0.52, -0.26, 0, 0.26, 0.52]) p.push(box(0.035, 0.32, 0.035, trim, { x: x + dx, y: y - 0.61, z: d / 2 + 0.47, surface: 'metal' }));
     }
   }
-  // Floor bands sit in the real gap between window rows instead of covering the panes.
-  const floorGap = (h - 4) / 3 - 1.45;
-  if (!far && floorGap > 0.24) for (const side of [-1, 1]) p.push(
-    box(w - 0.3, 0.12, 0.12, C.cream, { y: 3.5 + (h - 4) / 6, z: side * (d / 2 + 0.015), surface: 'stone' }));
-  for (const x of [-w / 2 + 0.2, w / 2 - 0.2]) p.push(box(0.3, h - 0.3, 0.12, C.cream, { x, y: h / 2, z: d / 2 + 0.08 }));
-  if (!far) {
-    // Small irregular plaster marks land in solid corners below the sill and never over glass.
-    const stain = style.weatheringColor ?? C.brick;
-    for (const side of [-1, 1]) for (const x of [-w / 2 + 0.18, w / 2 - 0.18]) {
-      const patch = [[0, 0], [0.12, 0.015], [0.19, 0.08], [0.13, 0.16], [0.03, 0.13]];
-      p.push(extrude(patch, 0.012, stain, { x, y: 2.23, z: side * (d / 2 + 0.006), surface: 'stucco' }));
-    }
-    // Four low-profile tile courses follow both pitches without changing the roof silhouette.
-    const roofRise = [0.34, 0.68, 1.02, 1.36];
-    for (const side of [-1, 1]) for (const rise of roofRise) {
-      const z = side * (d / 2 + 0.2) * (1 - rise / 1.7);
-      p.push(box(w + 0.3, 0.032, 0.04, style.roofTile ?? C.brick, {
-        y: h + 0.1 + rise, z, rx: -side * Math.atan(1.7 / (d / 2 + 0.2)), surface: 'roof',
-      }));
-    }
+  if (!far) for (let row = 1; row < n; row++) for (const side of [-1, 1]) p.push(box(w - 0.3, 0.12, 0.12, trim, { y: (ROW_Y[row - 1] + ROW_Y[row]) / 2 + 0.05, z: side * (d / 2 + 0.015), surface: 'stone' }));
+  for (const x of [-w / 2 + 0.2, w / 2 - 0.2]) p.push(box(0.3, h - 0.3, 0.12, trim, { x, y: h / 2, z: d / 2 + 0.08 }));
+  if (!far) for (const side of [-1, 1]) for (const rise of [0.34, 0.68, 1.02, 1.36]) {
+    const slope = 1.7 + (d - 5) * 0.12;
+    if (rise < slope - 0.1) p.push(box(w + 0.3, 0.032, 0.04, s.roofTile ?? C.brick, { y: h + 0.1 + rise, z: side * (d / 2 + 0.25) * (1 - rise / slope), rx: -side * Math.atan(slope / (d / 2 + 0.25)), surface: 'roof' }));
   }
   return p;
 };
 
 const person = (shirt, hat = false) => [
-  ...[-0.13, 0.13].flatMap(z => [rbox(0.17, 0.54, 0.14, C.dark, { y: 0.35, z, segments: 3, surface: 'fabric' }), rbox(0.3, 0.12, 0.2, C.wood, { y: 0.06, x: 0.06, z, segments: 3, surface: 'rubber' })]),
+  ...[-0.13, 0.13].flatMap(z => {
+    const o = { side: z > 0 ? 1 : -1, hip: [0, 0.62, z] }, pivot = [0, 0.62, z];
+    return [articulate(rbox(0.17, 0.54, 0.14, C.dark, { y: 0.35, z, segments: 3, surface: 'fabric' }), 'leg', pivot, o),
+      articulate(rbox(0.3, 0.12, 0.2, C.wood, { y: 0.06, x: 0.06, z, segments: 3, surface: 'rubber' }), 'leg', pivot, o)];
+  }),
   cyl(0.24, 0.22, 0.65, shirt, { y: 0.94, segments: 8, surface: 'fabric' }),
-  ...[-0.32, 0.32].map(z => cyl(0.075, 0.07, 0.5, shirt, { y: 0.92, z, segments: 6, surface: 'fabric' })),
-  ...[-0.32, 0.32].map(z => sphere(0.07, '#edc5a0', { y: 0.65, z, segments: 8, rings: 5 })),
+  ...[-0.32, 0.32].flatMap(z => [articulate(cyl(0.075, 0.07, 0.5, shirt, { y: 0.92, z, segments: 6, surface: 'fabric' }), 'arm', [0, 1.15, z], { side: z > 0 ? 1 : -1 }),
+    articulate(sphere(0.07, '#edc5a0', { y: 0.65, z, segments: 8, rings: 5 }), 'arm', [0, 1.15, z], { side: z > 0 ? 1 : -1 })]),
   cyl(0.08, 0.075, 0.16, '#edc5a0', { y: 1.27, segments: 8, surface: 'skin' }),
   rbox(0.2, 0.09, 0.36, C.white, { y: 1.27, segments: 2, surface: 'fabric' }),
   sphere(0.2, '#edc5a0', { y: 1.5, segments: 8, rings: 5 }),
@@ -100,15 +117,34 @@ const person = (shirt, hat = false) => [
   ...(hat ? [cyl(0.29, 0.29, 0.05, C.cream, { y: 1.67, segments: 10, surface: 'fabric' }), cyl(0.2, 0.2, 0.14, C.cream, { y: 1.74, segments: 10, surface: 'fabric' }), cyl(0.21, 0.21, 0.04, C.red, { y: 1.71, segments: 10, surface: 'fabric' })] : [sphere(0.205, C.wood, { y: 1.6, sy: 0.5, segments: 8, rings: 4 })]),
 ];
 
+/** Arched stone footbridge: span `len` along X (between the quays), `wid` across, ends step down to the quay. */
+export const footbridgeParts = (len, wid, color = '#eadfc4') => {
+  const half = len / 2, rise = Math.min(5.2, 0.9 + len * 0.2), b = 0.55, N = 14;
+  const top = (x) => b + rise * (1 - (x / half) ** 2);
+  const under = (x) => Math.max(0.02, top(x) - 0.55);
+  const xs = Array.from({ length: N + 1 }, (_, i) => -half + len * i / N);
+  const poly = [...xs.map(x => [x, top(x)]), ...xs.slice().reverse().map(x => [x, under(x)])];
+  const p = [extrude(poly, wid, color, { surface: 'stone' })];
+  for (const sd of [-1, 1]) {
+    p.push(box(1.6, b, wid, color, { x: sd * (half + 0.8), y: b / 2, surface: 'stone' }), box(1.2, 0.25, wid, '#d9cbaa', { x: sd * (half + 2.2), y: 0.125, surface: 'stone' }));
+    p.push(box(0.42, 1.0, 0.42, color, { x: sd * (half + 0.2), y: b + 0.5, z: wid / 2 - 0.1, surface: 'stone' }), box(0.42, 1.0, 0.42, color, { x: sd * (half + 0.2), y: b + 0.5, z: -(wid / 2 - 0.1), surface: 'stone' }));
+  }
+  for (let i = 0; i < N; i++) {
+    const x0 = xs[i], x1 = xs[i + 1], cx = (x0 + x1) / 2, ang = Math.atan2(top(x1) - top(x0), x1 - x0), sl = Math.hypot(x1 - x0, top(x1) - top(x0));
+    for (const sd of [-1, 1]) p.push(box(sl + 0.04, 0.55, 0.2, color, { x: cx, y: top(cx) + 0.28, z: sd * (wid / 2 - 0.1), rz: ang, surface: 'stone' }), box(sl + 0.04, 0.08, 0.3, '#f4ecd8', { x: cx, y: top(cx) + 0.58, z: sd * (wid / 2 - 0.1), rz: ang, surface: 'stone' }));
+    p.push(box(0.1, 0.05, wid - 0.5, '#c9b998', { x: cx, y: top(cx) + 0.02, rz: ang }));
+  }
+  return p;
+};
+export const makeFootbridge = (name, len, wid) => makeProto(name, footbridgeParts(len, wid), { value: 1 });
+
 export function buildProtos() {
   const P = {};
   // Dense little objects make growth steady; the complete city yields roughly radius 20.
   const add = (name, parts, opts) => P[name] = applyModelFinishes(makeProto(name, parts, { ...opts, value: opts.value * 0.52 }));
-  const addPalazzo = (name, w, h, d, color, awning, style, value = 10) => {
-    const proto = applyModelFinishes(makeProto(name, palazzo(w, h, d, color, awning, style), { value: value * 0.52 }));
-    const far = applyModelFinishes(makeProto(`${name}Far`, palazzo(w, h, d, color, awning, { ...style, detail: 'far' }), {
-      radius: proto.radius, value: proto.value,
-    }));
+  const addHouse = (name, spec, value) => {
+    const proto = applyModelFinishes(makeProto(name, townhouse(spec), { value }));
+    const far = applyModelFinishes(makeProto(`${name}Far`, townhouse({ ...spec, far: true }), { radius: proto.radius, value }));
     proto.geometryFar = far.geometry;
     P[name] = proto;
     return proto;
@@ -139,15 +175,15 @@ export function buildProtos() {
   add('mooringPole', [cyl(0.22, 0.28, 3.1, C.red, { y: 1.55, segments: 10 }),
     ...[0.4, 1.2, 2, 2.8].map(y => cyl(0.235, 0.235, 0.35, C.white, { y, segments: 10 })), cone(0.29, 0.38, C.gold, { y: 3.29, segments: 10 }),
   ], { value: 1.6 });
-  add('lantern', [cyl(0.16, 0.24, 3.7, '#536e76', { y: 1.85, segments: 10 }), cyl(0.42, 0.42, 0.14, C.dark, { y: 3.72, segments: 8 }), box(0.6, 0.8, 0.6, '#ffe6a0', { y: 4.16 }), cone(0.52, 0.38, C.dark, { y: 4.74, segments: 4, ry: PI / 4 }),
-    ...[-1, 1].flatMap(s => [box(0.06, 0.84, 0.65, C.dark, { y: 4.16, x: s * 0.3 }), box(0.65, 0.84, 0.06, C.dark, { y: 4.16, z: s * 0.3 })]),
-  ], { value: 2 });
+  add('lantern', [cyl(0.2, 0.26, 0.3, '#4a5a60', { y: 0.15, segments: 8 }), cyl(0.07, 0.11, 3.0, '#5d747b', { y: 1.7, segments: 8 }), cyl(0.22, 0.22, 0.1, C.dark, { y: 3.25, segments: 8 }), box(0.34, 0.5, 0.34, '#ffe6a0', { y: 3.55, emissive: 0.6 }), cone(0.32, 0.26, C.dark, { y: 3.93, segments: 4, ry: PI / 4 }),
+    ...[-1, 1].flatMap(s => [box(0.04, 0.54, 0.38, C.dark, { y: 3.55, x: s * 0.17 }), box(0.38, 0.54, 0.04, C.dark, { y: 3.55, z: s * 0.17 })]),
+  ], { value: 1.4 });
   add('tourist', person('#cf8dbb'), { value: 1.15 });
   add('gondolier', person(C.white, true).concat(...[0.7, 0.87, 1.04, 1.21].map(y => cyl(0.245, 0.235, 0.06, C.blue, { y, segments: 8 }))), { value: 1.15 });
   add('cafeChair', [box(0.65, 0.1, 0.65, C.red, { y: 0.6 }), box(0.65, 0.7, 0.1, C.red, { z: -0.28, y: 0.97 }),
     ...[-0.25, 0.25].flatMap(x => [-0.25, 0.25].map(z => cyl(0.035, 0.035, 0.6, C.dark, { x, z, y: 0.3, segments: 5 }))),
   ], { value: 0.95 });
-  add('cafeTable', [cyl(0.82, 0.82, 0.12, C.cream, { y: 1, segments: 12 }), cyl(0.08, 0.1, 0.92, C.dark, { y: 0.46, segments: 8 }), cyl(0.45, 0.45, 0.09, C.dark, { y: 0.045, segments: 8 }),
+  add('cafeTable', [cyl(0.82, 0.82, 0.12, '#3f7580', { y: 1, segments: 12 }), cyl(0.08, 0.1, 0.92, C.dark, { y: 0.46, segments: 8 }), cyl(0.45, 0.45, 0.09, C.dark, { y: 0.045, segments: 8 }),
     cyl(0.12, 0.1, 0.15, C.white, { y: 1.14, x: 0.3 }), torus(0.07, 0.025, C.white, { y: 1.14, x: 0.44, ry: PI / 2, radial: 4, segments: 8 }),
   ], { value: 1.6 });
   add('cafeUmbrella', [cyl(0.07, 0.07, 2.6, C.wood, { y: 1.3, segments: 8 }), cyl(0.48, 0.48, 0.13, C.stone, { y: 0.065, segments: 8 }), cone(1.8, 0.65, C.red, { y: 2.7, segments: 8 }), cone(1.81, 0.035, C.white, { y: 2.39, segments: 8 })], { value: 3 });
@@ -161,21 +197,49 @@ export function buildProtos() {
     ...[-0.7, 0.7].map(x => box(0.16, 0.65, 0.55, C.dark, { x, y: 0.325 })),
   ], { value: 1.8 });
 
-  const palazzi = [
-    ['palazzoPink', '#e7a294', 7, 9, 6, C.red, { shutterColor: '#557762', roofTile: '#a94e40', weatheringColor: '#bf7666' }],
-    ['palazzoPinkB', '#e7a294', 7, 9, 6, '#e7bd75', { shutterColor: '#4e7182', louvered: true, balconies: 'all', balconyColor: '#e2b966', roofTile: '#963e36', weatheringColor: '#bb7062' }],
-    ['palazzoYellow', '#efd697', 8, 10, 6, C.red, { shutterColor: '#66866d', balconies: true, roofTile: '#b85643', weatheringColor: '#c78a60' }],
-    ['palazzoYellowB', '#efd697', 8, 10, 6, C.blue, { shutterColor: '#925449', louvered: true, balconies: 'all', balconyColor: C.cream, roofTile: '#a94e40', weatheringColor: '#c18458' }],
-    ['palazzoBlue', '#a1c8c7', 6, 8, 5, C.red, { shutterColor: '#986147', roofTile: '#9d453b', weatheringColor: '#779e9b' }],
-    ['palazzoBlueB', '#a1c8c7', 6, 8, 5, '#e6c989', { shutterColor: '#a64f48', louvered: true, balconies: 'all', balconyColor: '#e3c68e', roofTile: '#a04b3d', weatheringColor: '#739794' }],
-    ['palazzoPeach', '#eab889', 9, 11, 7, C.red, { shutterColor: '#5d7d6d', balconies: true, roofTile: '#b55441', weatheringColor: '#c27b5c' }],
-    ['palazzoPeachB', '#eab889', 9, 11, 7, '#e4c983', { shutterColor: '#607e8b', louvered: true, balconies: 'all', balconyColor: '#d8b66e', roofTile: '#9f4a3b', weatheringColor: '#bd7659' }],
-  ];
-  for (const [name, color, w, h, d, awning, style] of palazzi) addPalazzo(name, w, h, d, color, awning, style);
-  addPalazzo('canalPalace', 13, 13, 9, C.cream, C.blue, {
-    shutterColor: '#5d7f75', louvered: true, balconies: 'all', balconyColor: C.gold,
-    roofTile: '#a64f43', weatheringColor: '#cdbda1',
-  }, 18);
+  // Pastel stucco palette: salmon, ochre, rose, cream, terracotta, buttery yellow, pale sage.
+  const PASTEL = ['#e49a86', '#e6bf7a', '#e3a3a6', '#efe0bd', '#d98b6a', '#efd697', '#a9cdbd'];
+  const AWN = [C.red, C.blue, '#e7bd75', C.green, null, null];
+  const SHUT = ['#557762', '#4e7182', '#7b4b3c', '#66866d', '#925449'];
+  const WIN = ['rect', 'arch', 'gothic', 'arch', 'gothic'];
+  const SIZES = [[6, 5], [7, 6], [5, 5], [8, 6], [4, 4], [9, 7], [5, 4], [6, 6]];
+  HOUSE_NAMES.length = 0;
+  let idx = 0;
+  for (let i = 0; i < 24; i++) {
+    const [w, d] = SIZES[i % SIZES.length], n = [3, 4, 3, 5, 4, 3, 4, 5, 3][i % 9];
+    const spec = {
+      w, d, n, color: PASTEL[(i * 3) % 7], shutter: SHUT[i % 5], windows: WIN[i % 5], awning: AWN[i % 6] ?? undefined,
+      balcony: i % 3 === 0 ? 'all' : i % 3 === 1 ? true : false, chimneys: 1 + (i % 2), altana: i % 5 === 2,
+      roof: i % 4 === 1 ? '#c26548' : C.roof, roofTile: i % 2 ? '#a94e40' : '#b85643', shutters: i % 4 !== 3,
+      trim: i % 6 === 4 ? '#f3e2b8' : C.cream,
+    };
+    const name = 'casa' + idx++;
+    addHouse(name, spec, w * d * n / 95);
+    HOUSE_NAMES.push(name);
+  }
+  addHouse('canalPalace', { w: 13, d: 8, n: 4, color: '#f1e3c4', trim: '#fff7e4', shutter: '#5d7f75', windows: 'gothic', balcony: 'all', chimneys: 2, awning: C.blue, roofTile: '#a64f43' }, 6);
+  addHouse('procuratie', { w: 18, d: 7, n: 3, color: '#efe3c8', trim: '#fff7e4', shutter: '#7c9a8c', windows: 'arch', chimneys: 2, shutters: false, roofTile: '#a94e40' }, 6);
+  add('well', [cyl(0.56, 0.62, 0.8, C.stone, { y: 0.4, segments: 8, surface: 'stone' }), cyl(0.7, 0.7, 0.14, C.cream, { y: 0.86, segments: 8, surface: 'stone' }),
+    cyl(0.44, 0.44, 0.06, C.dark, { y: 0.95, segments: 8 }), cyl(0.7, 0.74, 0.12, '#bfae8c', { y: 0.06, segments: 8 }),
+    ...[-1, 1].map(s => box(0.08, 0.8, 0.08, C.dark, { x: s * 0.45, y: 1.3, segments: 5 })), box(1.0, 0.07, 0.07, C.dark, { y: 1.72 })], { value: 1.5 });
+  add('trashBin', [cyl(0.27, 0.23, 0.78, '#4f6b5e', { y: 0.39, segments: 9, surface: 'metal' }), cyl(0.3, 0.3, 0.08, C.dark, { y: 0.82, segments: 9 })], { value: 0.6 });
+  add('planterBox', [box(1.4, 0.45, 0.5, '#c98d6b', { y: 0.225, surface: 'stone' }),
+    ...[-0.5, -0.17, 0.17, 0.5].map(x => sphere(0.26, C.green, { x, y: 0.62, segments: 7, rings: 4 })),
+    ...[-0.5, 0, 0.5].map(x => sphere(0.12, '#e8627f', { x, y: 0.88, z: 0.05, segments: 6, rings: 4 }))], { value: 0.9 });
+  add('motorBoat', (() => {
+    const p = [extrude([[-2.9, 0.55], [-2.2, 0.1], [2.1, 0.1], [3.0, 0.62], [2.2, 0.55], [-2.2, 0.55]], 1.5, '#7a4a2e', { surface: 'wood' }),
+      box(5.4, 0.07, 1.46, C.wood, { y: 0.56, x: -0.1, surface: 'wood' }),
+      rbox(2.1, 0.8, 1.2, C.white, { y: 1.0, x: -0.3, segments: 2, surface: 'paint' }), box(2.3, 0.1, 1.4, C.white, { y: 1.45, x: -0.3, surface: 'paint' }),
+      box(0.05, 0.4, 1.0, C.glass, { y: 1.05, x: 0.76, surface: 'glass' }),
+      ...[-1, 1].map(s => box(1.0, 0.36, 0.04, C.glass, { y: 1.07, x: -0.3, z: s * 0.61, surface: 'glass' })),
+      box(0.3, 0.3, 0.6, C.dark, { x: -2.6, y: 0.5 })];
+    return p;
+  })(), { value: 6 });
+  add('sailboat', [extrude([[-2.6, 0.7], [-2.0, 0.1], [2.0, 0.1], [3.0, 0.8], [2.0, 0.7], [-2.0, 0.7]], 1.2, C.white, { surface: 'paint' }),
+    box(5.2, 0.06, 1.1, C.wood, { y: 0.72, surface: 'wood' }), box(0.1, 0.18, 1.22, C.red, { y: 0.55, surface: 'paint' }),
+    cyl(0.06, 0.07, 6, '#a8a8a0', { x: 0.3, y: 3.6, segments: 6, surface: 'metal' }),
+    extrude([[0, 0], [3.9, 0], [0, 5.2]], 0.05, '#fff8ea', { x: -0.2, y: 1.2, z: 0.1, surface: 'fabric' }),
+    extrude([[0, 0], [2.4, 0], [0, 4.2]], 0.05, '#f4cf9a', { x: 0.55, y: 1.1, z: -0.1, ry: 0, surface: 'fabric' })], { value: 5, sway: 'boat' });
 
   add('gondola', (() => {
     const p = [extrude([[-3.4, 0.55], [-2.5, 0.08], [2.5, 0.08], [3.4, 0.7], [2.5, 0.6], [-2.5, 0.6]], 1.05, '#243746', { surface: 'paint' }),

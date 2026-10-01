@@ -1,6 +1,7 @@
 import { buildProtos } from '../objects/moon.js';
 
 let routeList = [];
+let CRATERS = [];
 let BAY1 = [], BAY2 = [];
 const BAYS = [{ cx: 92, cz: -84, w: 30, d: 17 }, { cx: -86, cz: -50, w: 24, d: 17 }];
 const inBay = (x, z) => BAYS.some((b) => Math.abs(x - b.cx) < b.w / 2 + 3 && Math.abs(z - b.cz) < b.d / 2 + 3);
@@ -41,6 +42,7 @@ export default {
       craters.push({ x: randRange(-S, S), z: randRange(-S, S), r: randRange(5, 16) });
     }
     craters.push({ x: -70, z: -60, r: 22 }, { x: 65, z: 55, r: 18 });
+    CRATERS = craters;
     // ejecta rays radiating from the larger craters
     const rays = [];
     craters.filter((c) => c.r > 9).forEach((c, k) => {
@@ -132,7 +134,7 @@ export default {
     place('launchPad', -70, 50, 0, 1);
 
     // --- Huge / large
-    scatter('boulder', 12, ALL, 0.9, 1.3, 60);
+    scatter('boulder', 8, ALL, 0.9, 1.3, 60);
     place('habitatBig', 62, -30, 0, 1);
     place('habitatBig', -90, -80, 0.6, 1);
     place('miningRig', -55, -75, 0.4, 1);
@@ -160,7 +162,7 @@ export default {
     scatter('antenna', 10, ALL);
     scatter('solarFarm', 8, BASE);
     scatter('solarFarm', 6, ALL);
-    scatter('rockL', 30, ALL, 0.9, 1.25, 40);
+    scatter('rockL', 10, ALL, 0.9, 1.25, 40);
 
     // --- Medium
     scatter('fuelTank', 16, BASE);
@@ -171,27 +173,56 @@ export default {
     scatter('rover', 3, [-100, 100, -20, 30], 0.95, 1.05);
     scatter('solarPanel', 26, BASE);
     scatter('solarPanel', 18, ALL);
-    scatter('rockM', 90, ALL, 0.85, 1.2);
+    scatter('rockM', 30, ALL, 0.85, 1.2);
 
-    // --- Starter cluster near spawn
-    const START = [-26, 26, -26, 26];
-    scatter('pebble', 14, START, 0.9, 1.1, 12);
-    scatter('rockS', 12, START, 0.9, 1.1, 12);
-    scatter('sampleBox', 6, START, 0.9, 1.1, 12);
-    scatter('astronaut', 5, START, 0.9, 1.1, 12);
-    scatter('flag', 3, START, 0.9, 1.1, 12);
-    scatter('tool', 6, START, 0.9, 1.1, 12);
+    // --- Crater rims and ejecta: boulder fields + rock clusters of every size (the bulk of the terrain detail)
+    const rimRock = (c, ang, dist) => {
+      const x = c.x + Math.cos(ang) * dist, z = c.z + Math.sin(ang) * dist, k = randRange(0, 1);
+      if (inBay(x, z)) return;
+      if (k < 0.07 && c.r > 8) { place('boulder', x, z, undefined, randRange(0.45, 1.0)); return; }
+      if (k < 0.22) { place('rockL', x, z, undefined, randRange(0.7, 1.15)); return; }
+      if (k < 0.5) { place('rockM', x, z, undefined, randRange(0.8, 1.2)); return; }
+      if (k < 0.8) { place('rockS', x, z, undefined, randRange(0.9, 1.2)); return; }
+      place('pebble', x, z, undefined, randRange(0.9, 1.3));
+    };
+    for (const c of CRATERS) {
+      const n = Math.round(c.r * 1.5);
+      for (let i = 0; i < n; i++) {
+        const ang = (i / n) * Math.PI * 2 + randRange(-0.15, 0.15), dist = c.r * randRange(1.0, 1.3);
+        rimRock(c, ang, dist);
+      }
+      // ejecta: tight little clusters fanning out along the rays
+      for (let k = 0; k < Math.round(c.r / 4); k++) {
+        const ang = randRange(0, Math.PI * 2), dist = c.r * randRange(1.4, 2.3), cx = c.x + Math.cos(ang) * dist, cz = c.z + Math.sin(ang) * dist;
+        for (let j = 0; j < 4; j++) rimRock({ x: cx, z: cz, r: 3 }, randRange(0, 6.28), randRange(0.8, 2.6));
+      }
+    }
+    scatter('boulder', 14, ALL, 0.5, 1.0, 60);
+    scatter('rockL', 14, ALL, 0.8, 1.2, 40);
 
-    // --- Small
-    scatter('flag', 30, ALL, 0.9, 1.1, 12);
-    scatter('antennaS', 35, ALL, 0.9, 1.1, 12);
-    scatter('astronaut', 90, ALL, 0.9, 1.1, 12);
+    // --- Orderly base items: antenna rows, solar arrays, equipment racks, flags at the landing site
+    const grid = (name, x0, z0, nx, nz, dx, dz, rot = 0) => { for (let i = 0; i < nx; i++) for (let j = 0; j < nz; j++) place(name, x0 + i * dx, z0 + j * dz, rot, 1); };
+    // spawn-side outpost: antenna row, solar array and equipment racks (a designed block, not scattered litter)
+    for (let i = 0; i < 11; i++) place('antennaS', -22 + i * 4.4, 13, 0, 1);
+    for (let i = 0; i < 9; i++) place('antennaS', -20 + i * 4.4, -16, 0, 1);
+    grid('solarPanel', 10, -24, 6, 2, 4.2, 4.6, PI2);
+    grid('sampleBox', -20, 8, 10, 2, 2.2, 1.6, 0);
+    grid('tool', -20, -9.5, 8, 1, 2.6, 1.6, 0);
+    for (let i = 0; i < 8; i++) place('astronaut', -16 + i * 4.5, 6, undefined, 1);
+    // main base
+    for (let i = 0; i < 12; i++) place('antennaS', 38 + i * 5.2, -100 + 4, 0, 1);
+    grid('solarPanel', 38, -24, 12, 2, 4.4, 4.8, PI2);
+    grid('solarPanel', -60, 78, 8, 2, 4.4, 4.8, PI2);
+    grid('sampleBox', 36, -46, 8, 2, 2.4, 1.7, 0);
+    grid('tool', 90, -46, 4, 2, 2.4, 1.7, 0);
+    grid('sampleBox', -100, -66, 6, 2, 2.4, 1.7, 0);
+    grid('antennaS', -110, -90, 1, 8, 1, 4.8, 0);
+    place('flag', 60, -45, 0, 1); place('flag', 46, -62, 0, 1); place('flag', 74, -62, 0, 1);
     scatter('astronaut', 40, BASE, 0.9, 1.1, 12);
-    scatter('sampleBox', 60, ALL, 0.9, 1.1, 12);
-    scatter('sampleBox', 40, BASE, 0.9, 1.1, 12);
-    scatter('tool', 40, ALL, 0.9, 1.1, 12);
-    scatter('tool', 30, RIG, 0.9, 1.1, 12);
-    scatter('rockS', 150, ALL, 0.9, 1.2, 12);
-    scatter('pebble', 170, ALL, 0.9, 1.3, 12);
+    scatter('astronaut', 22, ALL, 0.9, 1.1, 12);
+    scatter('sampleBox', 14, BASE, 0.9, 1.1, 12);
+    scatter('tool', 10, RIG, 0.9, 1.1, 12);
+    scatter('rockS', 80, ALL, 0.9, 1.2, 12);
+    scatter('pebble', 90, ALL, 0.9, 1.3, 12);
   },
 };

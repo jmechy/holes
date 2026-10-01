@@ -129,6 +129,17 @@ export default {
     addDecal(merge(zebra), '#f7f2e4');
     addDecal(merge(manholes), '#6a665c');
 
+    // 4-wide pavements along both sides of every boulevard (shopfronts, cafe terraces, trees and lamps sit on them)
+    const walks = [];
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * TAU, hw = k % 2 ? 4.5 : 6.5;
+      for (const sg of [-1, 1]) {
+        const off = (hw + 2) * sg;
+        walks.push(rect(Math.cos(a) * 76 - Math.sin(a) * off, Math.sin(a) * 76 + Math.cos(a) * off, 84, 4, -a));
+      }
+    }
+    addDecal(merge(walks), ROAD_EDGE, { style: 'concrete' });
+
     // dashed centre lines
     const dashes = [];
     for (let k = 0; k < 8; k++) {
@@ -146,7 +157,6 @@ export default {
       bridges.push(rect(bx, zc, 12, 20));
       rails.push(rect(bx - 6.3, zc, 0.7, 21), rect(bx + 6.3, zc, 0.7, 21));
     }
-    bridges.push(rect(-32, riverZ(-32), 8, 19), rect(32, riverZ(32), 8, 19));
     addDecal(merge(bridges), '#c9bfa4');
     addDecal(merge(rails), '#8f8670');
 
@@ -217,13 +227,15 @@ export default {
 
   populate(ctx) {
     const { randRange, rand, size: S } = ctx;
-    const TAU = Math.PI * 2;
+    const TAU = Math.PI * 2, PI = Math.PI;
+    const riverZ = (x) => 62 + Math.sin(x / 22) * 10;
+    const HW = (k) => (k % 2 ? 4.5 : 6.5);
     // static props stay off the asphalt (movers may cross it): roundabout ring + the 8 boulevards, as in decorate()
     const onRoad = (x, z, m) => {
       if (Math.hypot(x, z) < RING_R + m && Math.hypot(x, z) > 19) return true;
       for (let k = 0; k < 8; k++) {
         const a = (k / 8) * TAU, c = Math.cos(a), sn = Math.sin(a);
-        if (x * c + z * sn > 20 && Math.abs(-x * sn + z * c) < (k % 2 ? 4.5 : 6.5) + m) return true;
+        if (x * c + z * sn > 20 && Math.abs(-x * sn + z * c) < HW(k) + m) return true;
       }
       return false;
     };
@@ -233,35 +245,31 @@ export default {
       if (isStatic && onRoad(x, z, Math.min(1, (proto ? proto.radius * sc : 0) * 0.6))) return false;
       return ctx.place(n, x, z, rot, sc, opts);
     };
-    const riverZ = (x) => 62 + Math.sin(x / 22) * 10;
-    const scatter = (name, n, [x0, x1, z0, z1], sMin = 1, sMax = 1, tries = 30) => {
-      for (let i = 0; i < n; i++) {
-        for (let t = 0; t < tries; t++) {
-          const x = randRange(x0, x1), z = randRange(z0, z1);
-          if (place(name, x, z, undefined, randRange(sMin, sMax))) break;
-        }
-      }
-    };
-    // scatter avoiding the river band
-    const dry = (name, n, box, sMin = 1, sMax = 1, tries = 30) => {
-      for (let i = 0; i < n; i++) {
-        for (let t = 0; t < tries; t++) {
-          const x = randRange(box[0], box[1]), z = randRange(box[2], box[3]);
-          if (Math.abs(z - riverZ(x)) < 9.5 || inLot(x, z)) continue;
-          if (place(name, x, z, undefined, randRange(sMin, sMax), Math.abs(z - riverZ(x)) < 17 ? { move: null } : undefined)) break;
-        }
-      }
-    };
-    const ALL = [-S + 3, S - 3, -S + 3, S - 3];
-    // keep loose props out of the parking lots, and the boulevard houses off the two big lawns
-    const LOTS = [[32, 68, 90, 108], [-68, -32, 90, 108], [-62, -22, -105, -75]];
-    const inLot = (x, z) => LOTS.some((b) => x > b[0] - 1 && x < b[1] + 1 && z > b[2] - 1 && z < b[3] + 1);
-    const inLawn = (x, z) => (x > -101 && x < -49 && z > -43 && z < -7) || (x > 53 && x < 91 && z > -47 && z < -17);
     const along = (a, d, off) => [Math.cos(a) * d - Math.sin(a) * off, Math.sin(a) * d + Math.cos(a) * off];
+    // keep-clear zones (landmark open spaces, lots, river) shared by buildings and loose props
+    const RECTS = [[-101.5, -48.5, -43.5, -6.5], [52.5, 91.5, -47.5, -16.5], [30, 70, 88, 110], [-70, -30, 88, 110], [-64, -20, -107, -73], [-24, -4, 40, 50]];
+    const CIRCS = [[42, -72, 15.5], [-37, 14, 5.5], [37, 14, 5.5], [-75, -25, 12]];
+    const keepClear = (x, z, m = 0) => {
+      if (Math.abs(z - riverZ(x)) < 9.5 + m) return true;
+      for (const b of RECTS) if (x > b[0] - m && x < b[1] + m && z > b[2] - m && z < b[3] + m) return true;
+      for (const c of CIRCS) if (Math.hypot(x - c[0], z - c[1]) < c[2] + m) return true;
+      return false;
+    };
+    const quay = (x, z) => Math.abs(z - riverZ(x)) < 17;
+    const loose = (name, x, z, rot, sc = 1, opts) => !keepClear(x, z) && place(name, x, z, rot, sc, quay(x, z) ? { move: null, ...opts } : opts);
+    const randIn = (box) => [randRange(box[0], box[1]), randRange(box[2], box[3])];
+    const scatter = (name, n, box, sMin = 1, sMax = 1, tries = 30) => {
+      let c = 0;
+      for (let i = 0; i < n; i++) for (let t = 0; t < tries; t++) {
+        const [x, z] = randIn(box);
+        if (loose(name, x, z, undefined, randRange(sMin, sMax))) { c++; break; }
+      }
+      return c;
+    };
 
-    // --- Huge landmarks
+    // --- Huge landmarks (open spaces kept clear around them)
     place('eiffel', -75, -25, 0, 1);
-    place('arc', 0, -15, Math.PI / 2, 1);
+    place('arc', 0, -15, PI / 2, 1);
     place('cathedral', 42, -72, 0.3, 1);
     place('carousel', 72, -32, 0, 1);
     place('fountain', -37, 14, 0, 1);
@@ -269,26 +277,201 @@ export default {
 
     // --- Parked cars: nose-in stalls in the lots, parallel along the boulevard kerbs, coaches in the coach bay
     const carNames = ['citroen', 'citroen2', 'citroen3', 'taxi', 'citroen', 'citroen3'];
-    for (const s of this.lots.east) rand() < 0.6 && ctx.placeParked(ctx.pick(carNames), s);
-    for (const s of this.lots.west) rand() < 0.6 && ctx.placeParked(ctx.pick(carNames), s);
-    for (const s of this.lots.coach) rand() < 0.4 && ctx.placeParked('tourBus', s);
-    for (const s of this.curb) rand() < 0.5 && ctx.placeParked(ctx.pick(carNames), s);
+    for (const s of this.lots.east) rand() < 0.5 && ctx.placeParked(ctx.pick(carNames), s);
+    for (const s of this.lots.west) rand() < 0.5 && ctx.placeParked(ctx.pick(carNames), s);
+    for (const s of this.lots.coach) rand() < 0.35 && ctx.placeParked('tourBus', s);
+    for (const s of this.curb) rand() < 0.2 && ctx.placeParked(ctx.pick(carNames), s);
 
-    // --- Haussmann blocks lining the boulevards
-    const houses = ['houseA', 'houseB', 'houseC'];
+    // --- Boulevard pavements: lamps, plane trees in rows, bins, bollards, Morris columns and kiosks
     for (let k = 0; k < 8; k++) {
-      const a = (k / 8) * TAU;
-      const half = k % 2 ? 9 : 11;
-      for (const s of [-1, 1]) {
-        for (let d = 36; d < 112; d += 16) {
-          const [x, z] = along(a, d + randRange(-1, 1), s * (half + 6.5));
-          if (Math.abs(z - riverZ(x)) < 15 || inLawn(x, z)) continue;
-          if (rand() < 0.5) continue;
-          place(ctx.pick(houses), x, z, -a + (s > 0 ? Math.PI : 0), 1);
+      const a = (k / 8) * TAU, hw = HW(k);
+      for (const sg of [-1, 1]) {
+        const rot = k % 2 ? 0 : 0;
+        for (let d = 35, i = 0; d < 119; d += 7, i++) {
+          const [lx, lz] = along(a, d, sg * (hw + 0.9));
+          const [tx, tz] = along(a, d + 3.5, sg * (hw + 1.7));
+          if (quay(lx, lz) && Math.abs(lz - riverZ(lx)) < 11.5) continue;
+          if (i % 4 === 0) place('streetLamp', lx, lz, -a);
+          else if (i % 2 === 1) place('planeTree', tx, tz, undefined, 0.85, { move: null });
+          if (i % 8 === 1) place('trashCan', ...along(a, d, sg * (hw + 1.0)), 0);
+          if (i % 16 === 3) { place('bollard', ...along(a, d + 1, sg * (hw + 0.5)), 0); place('bollard', ...along(a, d + 2.2, sg * (hw + 0.5)), 0); }
+        }
+        // Morris columns and kiosks at the corners where the lanes meet the boulevard
+        place('moriceColumn', ...along(a, 38.5, sg * (hw + 1.5)), 0);
+        place('newsstand', ...along(a, 52, sg * (hw + 2.0)), -a + (sg > 0 ? PI : 0), 1);
+        place('moriceColumn', ...along(a, 91, sg * (hw + 1.5)), 0);
+        if (k % 2 === 0) place('newsstand', ...along(a, 103, sg * (hw + 2.0)), -a + (sg > 0 ? PI : 0), 1);
+      }
+    }
+
+    // --- Haussmann perimeter blocks: rows parallel to each boulevard, back-to-back pairs around a courtyard strip,
+    // a lane between pairs. Exact footprint packing so facades run continuous.
+    const SPEC = { houseA: 9, houseB: 7, houseC: 10, houseD: 6, houseE: 8, houseF: 9, houseG: 6 };
+    const DEP = { houseG: 5.5 };
+    const NAMES = ['houseA', 'houseC', 'houseF', 'houseE', 'houseB', 'houseD', 'houseA', 'houseC', 'houseE'];
+    const DEPTH = 7;
+    const boxes = [];
+    const overlaps = (A, B) => {
+      for (const ax of [[A.ux, A.uz], [A.vx, A.vz], [B.ux, B.uz], [B.vx, B.vz]]) {
+        const proj = (X) => Math.abs(ax[0] * X.ux + ax[1] * X.uz) * X.hw + Math.abs(ax[0] * X.vx + ax[1] * X.vz) * X.hd;
+        if (Math.abs((B.x - A.x) * ax[0] + (B.z - A.z) * ax[1]) >= proj(A) + proj(B) - 0.05) return false;
+      }
+      return true;
+    };
+    const blocked = (B) => {
+      const pts = [[0, 0]];
+      for (const sx of [-1, 0, 1]) for (const sz of [-1, 0, 1]) if (sx || sz) pts.push([sx, sz]);
+      for (const [sx, sz] of pts) {
+        const x = B.x + B.ux * sx * B.hw + B.vx * sz * B.hd, z = B.z + B.uz * sx * B.hw + B.vz * sz * B.hd;
+        if (Math.abs(x) > S - 1.5 || Math.abs(z) > S - 1.5) return true;
+        if (Math.hypot(x, z) < RING_R + 2) return true;
+        if (keepClear(x, z, 0.5)) return true;
+        for (let k = 0; k < 8; k++) {
+          const a = (k / 8) * TAU, c = Math.cos(a), sn = Math.sin(a);
+          if (x * c + z * sn > 20 && Math.abs(-x * sn + z * c) < HW(k) + 3.7) return true;
+        }
+      }
+      for (const O of boxes) if (Math.hypot(O.x - B.x, O.z - B.z) < 14 && overlaps(B, O)) return true;
+      return false;
+    };
+    const tables = [];
+    const tryBuild = (name, x, z, rot, front) => {
+      const w = SPEC[name];
+      const B = { x, z, ux: Math.cos(rot), uz: -Math.sin(rot), vx: Math.sin(rot), vz: Math.cos(rot), hw: w / 2 + 0.1, hd: (DEP[name] ?? DEPTH) / 2 + 0.1 };
+      if (blocked(B)) return false;
+      if (!ctx.place(name, x, z, rot, 1, { move: null, tight: true, overlap: 0 })) return false;
+      boxes.push(B);
+      if (front && w >= 8) tables.push({ x: x + B.vx * (DEPTH / 2 + 1.7), z: z + B.vz * (DEPTH / 2 + 1.7), ux: B.ux, uz: B.uz, w });
+      return true;
+    };
+    const L0 = (k) => HW(k) + 4 + DEPTH / 2;
+    const rowL = [0, 10.6, 22.3, 32.9, 44.6, 55.2, 66.9, 77.5];
+    for (let j = 0; j < 8; j++) {
+      for (let k = 0; k < 8; k++) for (const sg of [-1, 1]) {
+        const a = (k / 8) * TAU, L = L0(k) + rowL[j];
+        const toward = Math.atan2(sg * Math.sin(a), -sg * Math.cos(a));
+        const rot = j % 2 === 0 ? toward : toward + PI;
+        let d = 28;
+        while (d < 175) {
+          const name = NAMES[Math.floor(rand() * NAMES.length)], w = SPEC[name];
+          const dc = d + w / 2;
+          const [x, z] = along(a, dc, sg * L);
+          if (Math.abs(Math.atan2(L, dc)) > PI / 8 + 0.14) { d += dc < 60 ? 2 : 6; if (Math.atan2(L, dc) > PI / 8 + 0.14 && dc > 60) break; continue; }
+          if (tryBuild(name, x, z, rot, true)) d += w + 0.2; else d += 2;
         }
       }
     }
-    dry('houseB', 3, ALL);
+    // fill remaining pockets with buildings facing the nearest boulevard
+    const order = [];
+    for (let x = -S + 4; x < S - 3; x += 2) for (let z = -S + 4; z < S - 3; z += 2) order.push([x, z]);
+    order.sort((p, q) => Math.hypot(...p) - Math.hypot(...q));
+    for (const [x, z] of order) {
+      if (Math.hypot(x, z) < RING_R + 4) continue;
+      const k0 = Math.atan2(z, x) / (PI / 4);
+      let done = false;
+      for (const k1 of [Math.round(k0), k0 > Math.round(k0) ? Math.round(k0) + 1 : Math.round(k0) - 1]) {
+        const k = ((k1 % 8) + 8) % 8, a = (k1 / 8) * TAU;
+        const lat = -x * Math.sin(a) + z * Math.cos(a), sg = lat >= 0 ? 1 : -1;
+        const rot = Math.atan2(sg * Math.sin(a), -sg * Math.cos(a));
+        for (const name of ['houseC', 'houseF', 'houseA', 'houseE', 'houseB', 'houseD', 'houseG']) if (tryBuild(name, x, z, rot, true)) { done = true; break; }
+        if (done) break;
+      }
+    }
+    // cafe terraces in front of the shops
+    for (const t of tables) {
+      if (rand() < 0.4) continue;
+      for (const sx of [-1, 1]) {
+        if (rand() < 0.5) continue;
+        const off = sx * (t.w / 2 - 2.2);
+        loose('cafeTable', t.x + t.ux * off, t.z + t.uz * off, Math.atan2(-t.uz, t.ux) + (rand() < 0.5 ? 0 : PI), 1);
+      }
+      if (rand() < 0.3) loose('flowerPot', t.x + t.ux * 0.0, t.z + t.uz * 0.0, undefined, 1);
+    }
+
+    // --- Courtyard strips and lanes between building pairs: planters, hedges, bushes, bins, racks, benches, lamps
+    const COURT = ['hedge', 'bush', 'planterBox', 'hedge', 'bikeRack', 'bush', 'planterBox', 'hedge', 'bench'];
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * TAU;
+      for (const sg of [-1, 1]) {
+        const base = L0(k);
+        for (const [dl, kind] of [[5.3, 'court'], [27.6, 'court'], [49.9, 'court'], [72.2, 'court'], [16.45, 'lane'], [38.75, 'lane'], [61.0, 'lane']]) {
+          const L = base + dl;
+          for (let d = 32, i = 0; d < 170; d += kind === 'court' ? 9 : 21, i++) {
+            if (Math.abs(Math.atan2(L, d)) > PI / 8 + 0.2) continue;
+            const [x, z] = along(a, d, sg * L);
+            if (kind === 'court') {
+              const n = COURT[(i * 7 + k) % COURT.length];
+              place(n, x, z, n === 'hedge' || n === 'planterBox' || n === 'bench' ? -a : undefined, 1);
+            } else if (i % 2 === 0) place('streetLamp', x, z, -a);
+            else place('bench', x, z, -a + PI / 2);
+          }
+        }
+      }
+    }
+
+    // --- Quays along the Seine: lamps, plane trees, benches, bins
+    for (let x = -S + 8, i = 0; x < S - 6; x += 7, i++) {
+      for (const sg of [-1, 1]) {
+        const z = riverZ(x) + sg * 10.4;
+        if (i % 3 === 0) ctx.place('streetLamp', x, z, 0, 1, { move: null });
+        else if (i % 3 === 1) ctx.place('planeTree', x, riverZ(x) + sg * 11.3, undefined, 0.85, { move: null });
+        else ctx.place(sg > 0 ? 'bench' : 'trashCan', x, z, sg > 0 ? 0 : 0, 1, { move: null });
+      }
+    }
+
+    // --- Landmark open spaces: hedged lawns, fences, park trees
+    const edgeRun = (name, x0, z0, x1, z1, step, rot) => {
+      const n = Math.floor(Math.hypot(x1 - x0, z1 - z0) / step);
+      for (let i = 0; i <= n; i++) ctx.place(name, x0 + ((x1 - x0) * i) / n, z0 + ((z1 - z0) * i) / n, rot, 1, { move: null });
+    };
+    edgeRun('hedge', -100.6, -42, -50.6, -42, 3.6, 0); edgeRun('hedge', -100.6, -8, -50.6, -8, 3.6, 0);
+    edgeRun('ironFence', 54.5, -46.5, 89, -46.5, 2.2, 0); edgeRun('ironFence', 54.5, -17.5, 89, -17.5, 2.2, 0);
+    edgeRun('ironFence', 54, -45, 54, -19, 2.2, PI / 2); edgeRun('ironFence', 90, -45, 90, -19, 2.2, PI / 2);
+    scatter('tree', 12, [-97, -55, -39, -12]);
+    scatter('tree', 8, [57, 87, -43, -21]);
+    scatter('bench', 10, [-97, -55, -39, -12]);
+    scatter('bench', 8, [57, 87, -43, -21]);
+    scatter('flowerPot', 12, [57, 87, -43, -21]);
+    scatter('tourist', 14, [-97, -55, -39, -12], 1, 1, 12);
+    scatter('tourist2', 10, [-97, -55, -39, -12], 1, 1, 12);
+    scatter('tourist2', 8, [57, 87, -43, -21], 1, 1, 12);
+    // cathedral parvis
+    for (let i = 0; i < 10; i++) { const a = 1.6 + i * 0.35; ctx.place(i % 2 ? 'planterBox' : 'bush', 42 + Math.cos(a) * 12.5, -72 + Math.sin(a) * 12.5, a + PI / 2, 1, { move: null }); }
+    // car park edges and fountain plazas
+    for (const [cx, cz] of [[-37, 14], [37, 14]]) for (let i = 0; i < 6; i++) { const a = (i / 6) * TAU + 0.3; place('bench', cx + Math.cos(a) * 4.6, cz + Math.sin(a) * 4.6, -a + PI / 2, 1); }
+    // trees and hedges lining the ring road
+    for (let i = 0; i < 32; i++) {
+      const a = (i / 32) * TAU + 0.07, R = RING_R + 1.9;
+      if (i % 2) place('planeTree', Math.cos(a) * R, Math.sin(a) * R, undefined, 0.8, { move: null });
+      else place('streetLamp', Math.cos(a) * (RING_R + 1.0), Math.sin(a) * (RING_R + 1.0), -a);
+    }
+
+    // --- Roundabout garden (spawn): parterre hedges flanking the eight paths, benches, lamps, planters, strollers
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * TAU;
+      for (const sg of [-1, 1]) {
+        for (const r of [11.4, 14.4]) { ctx.place('hedge', ...along(a, r, sg * 1.5), -a, 1, { move: null }); }
+        ctx.place('flowerPot', ...along(a, 8.6, sg * 1.2), 0, 1, { move: null });
+      }
+      ctx.place('streetLamp', ...along(a, 9.6, 0), 0, 1, { move: null });
+      ctx.place('bench', ...along(a, 16.6, 0), -a + PI / 2, 1, { move: null });
+      ctx.place('bush', ...along(a + TAU / 16, 13, 0), undefined, 1, { move: null });
+      ctx.place('planterBox', ...along(a + TAU / 16, 16.2, 0), -a - TAU / 16, 1, { move: null });
+      ctx.place('bush', ...along(a + TAU / 16, 8, 0), undefined, 1, { move: null });
+    }
+    for (let i = 0; i < 9; i++) {
+      const [x, z] = [randRange(-16, 16), randRange(-17, 17)];
+      if (Math.hypot(x, z) < 17) ctx.place(i % 3 === 0 ? 'mime' : i % 2 ? 'tourist' : 'tourist2', x, z, undefined, 1, undefined);
+    }
+
+    // --- People: strollers, tourists and mimes wandering the pavements, lawns and courtyards
+    const ALL = [-S + 5, S - 5, -S + 5, S - 5];
+    scatter('tourist', 22, ALL, 1, 1, 80); scatter('tourist2', 22, ALL, 1, 1, 80); scatter('mime', 10, ALL, 1, 1, 80);
+
+    // --- Edge of the map: hedged verge
+    for (let i = -S + 6; i < S - 4; i += 18) {
+      for (const [x, z] of [[i, -S + 2.2], [i, S - 2.2], [-S + 2.2, i], [S - 2.2, i]]) loose('hedge', x, z, undefined, 1);
+    }
 
     // --- Traffic: roundabout, boulevards (both directions), tour buses, scooters, bicycles, boats on the Seine
     const rt = this.routes;
@@ -313,55 +496,5 @@ export default {
     ctx.placeOnRoute('bicycle', rt.ringB, { count: 2, speed: 3.2, offset: 1.2, speedJitter: 0.2 });
     ctx.placeOnRoute('boat', rt.boatE, { count: 5, speed: 2.6, offset: 2.6, speedJitter: 0.25 });
     ctx.placeOnRoute('boat', rt.boatW, { count: 5, speed: 2.6, offset: 2.6, speedJitter: 0.25 });
-    dry('newsstand', 12, ALL, 0.95, 1.1);
-    dry('umbrellaTable', 26, ALL, 0.95, 1.1);
-    dry('tree', 18, [-95, -55, -38, -12]);
-    dry('tree', 10, [55, 90, -44, -20]);
-    dry('tree2', 30, [-95, 95, -100, 100]);
-    dry('tree2', 8, [-95, -55, -38, -12]);
-    dry('fountain', 1, ALL);
-
-    // --- Starter cluster around the spawn: lawn island + gravel
-    const START = [-26, 26, -26, 26];
-    scatter('croissant', 14, START, 0.9, 1.1, 12);
-    scatter('flowerPot', 10, START, 0.9, 1.1, 12);
-    scatter('baguetteBasket', 8, START, 0.9, 1.1, 12);
-    scatter('tourist', 6, START, 0.9, 1.1, 12);
-    scatter('bicycle', 4, START, 0.9, 1.1, 12);
-    scatter('streetLamp', 6, START, 0.9, 1.1, 12);
-
-    // --- Medium
-    dry('bench', 30, ALL, 0.9, 1.1);
-    dry('moriceColumn', 20, ALL, 0.9, 1.1);
-    dry('cafeTable', 50, ALL, 0.9, 1.1);
-    dry('scooter', 22, ALL, 0.9, 1.1);
-    dry('bench', 16, [-95, -55, -38, -12]);
-    dry('bench', 8, [55, 90, -44, -20]);
-
-    // --- Lamps along the boulevards
-    for (let k = 0; k < 8; k++) {
-      const a = (k / 8) * TAU;
-      for (let d = 32; d < 116; d += 14) {
-        for (const s of [-1, 1]) {
-          const [x, z] = along(a, d, s * (k % 2 ? 5.6 : 7.4));
-          if (Math.abs(z - riverZ(x)) < 9) continue;
-          place('streetLamp', x, z, undefined, 1);
-        }
-      }
-    }
-    // --- Small
-    dry('streetLamp', 40, ALL, 0.9, 1.1, 12);
-    dry('flowerPot', 60, ALL, 0.9, 1.15, 12);
-    dry('croissant', 70, ALL, 0.9, 1.15, 12);
-    dry('baguetteBasket', 45, ALL, 0.9, 1.15, 12);
-    dry('bicycle', 40, ALL, 0.9, 1.1, 12);
-    dry('tourist', 55, ALL, 0.9, 1.15, 12);
-    dry('tourist2', 55, ALL, 0.9, 1.15, 12);
-    dry('mime', 32, ALL, 0.9, 1.15, 12);
-    dry('tourist', 24, [-95, -55, -38, -12], 0.9, 1.1, 12);
-    dry('tourist2', 20, [-95, -55, -38, -12], 0.9, 1.1, 12);
-    dry('mime', 8, [-30, 30, -30, 30], 0.9, 1.1, 12);
-    dry('flowerPot', 30, [-30, 30, -30, 30], 0.9, 1.15, 12);
-    dry('croissant', 30, ALL, 0.9, 1.15, 12);
   },
 };

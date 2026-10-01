@@ -458,6 +458,8 @@ export class Scenery {
     this.group = new THREE.Group();
     const S = map.size;
     const rand = mulberry32(hashSeed(map.id + ':scenery'));
+    /** map.backdropClear: [{x0,z0,x1,z1}] world rectangles where city backdrop buildings are not generated. */
+    this.clear = map.backdropClear || [];
     const N = makeNoise(hashSeed(map.id + ':noise'));
     const { top, horizon } = skyColors(map);
     this.horizon = horizon;
@@ -563,8 +565,37 @@ export class Scenery {
       this.group.add(new THREE.Mesh(g, applyHoleDiscard(m)));
     }
     this.flushProps();
+    this.buildTunnels(S);
     if (hasSpace) this.buildSpace(S, rand);
     return hasSpace ? null : skirt; // no skirt over the star plane
+  }
+
+  /** map.tunnels: [{ side: 'east'|'west', z0, z1, length, height }] concrete tunnel sheds just outside the map edge,
+   *  with dark portal mouths facing the map, so a rail line leaving the map disappears from view. */
+  buildTunnels(S) {
+    const list = this.map.tunnels;
+    if (!list || !list.length) return;
+    const parts = [];
+    for (const t of list) {
+      const sg = t.side === 'west' ? -1 : 1;
+      const x0 = S + 1.5, len = t.length, h = t.height, w = t.z1 - t.z0, zc = (t.z0 + t.z1) / 2;
+      const cx = sg * (x0 + len / 2), fx = sg * (x0 + 0.05);
+      parts.push(box(len, h, w, '#8e929a', { x: cx, y: h / 2, z: zc }));
+      parts.push(box(len, 0.6, w + 1.2, '#6f737b', { x: cx, y: h + 0.3, z: zc }));
+      parts.push(box(1.4, h + 0.6, w + 1.2, '#7b7f87', { x: sg * (x0 + 0.5), y: (h + 0.6) / 2, z: zc }));
+      const n = t.mouths || 2, pw = Math.min(8, w / n - 2);
+      for (let i = 0; i < n; i++) {
+        const mz = t.z0 + (w / n) * (i + 0.5);
+        parts.push(box(0.4, h - 1.8, pw, '#1a1b20', { x: sg * (x0 + 1.3), y: (h - 1.8) / 2, z: mz }));
+        parts.push(box(0.3, 0.5, pw + 1.2, '#f2c230', { x: sg * (x0 + 1.25), y: h - 1.5, z: mz }));
+      }
+    }
+    const g = mergeGeometries(parts, false);
+    parts.forEach((p) => p.dispose());
+    const m = this.high ? new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 }) : new THREE.MeshLambertMaterial({ vertexColors: true });
+    const mesh = new THREE.Mesh(g, applyHoleDiscard(m));
+    mesh.castShadow = false;
+    this.group.add(mesh);
   }
 
   addCity(side, S, B, e, rand, out, detail) {
@@ -596,6 +627,7 @@ export class Scenery {
         else if (side === 'south') { x = a; z = t; }
         else if (side === 'east') { x = t; z = a; }
         else { x = -t; z = a; }
+        if (this.clear.some((q) => x + w / 2 > q.x0 && x - w / 2 < q.x1 && z + d / 2 > q.z0 && z - d / 2 < q.z1)) continue;
         out.push(box(w, hgt, d, c, { x, y: hgt / 2, z }));
         const r = rand();
         if (hgt > 24) { // tower: setback tiers, antenna, sometimes a helipad

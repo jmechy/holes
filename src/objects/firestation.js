@@ -1209,5 +1209,177 @@ export function buildProtos() {
     return p;
   })(), { value: 90, radius: 13 });
 
+  // ---------------------------------------------------------------------------------------------------------------
+  // Town fabric: fences, hedges, street furniture, shops, apartments, school, church, gas station
+  // ---------------------------------------------------------------------------------------------------------------
+  const picket = (col, rail) => {
+    const p = [box(2.4, 0.07, 0.05, rail, { y: 0.25, surface: 'wood' }), box(2.4, 0.07, 0.05, rail, { y: 0.65, surface: 'wood' }),
+      box(0.1, 0.9, 0.1, rail, { y: 0.45, x: -1.15, surface: 'wood' }), box(0.1, 0.9, 0.1, rail, { y: 0.45, x: 1.15, surface: 'wood' })];
+    for (let x = -1.0; x < 1.05; x += 0.2) p.push(box(0.1, 0.78, 0.03, col, { y: 0.42, x: x + 0.05, z: 0.04, surface: 'wood' }), box(0.1, 0.1, 0.03, col, { y: 0.84, x: x + 0.05, z: 0.04, rz: PI / 4, surface: 'wood' }));
+    return p;
+  };
+  add('picket', picket(C.white, '#e6e2d6'), { value: 0.2, radius: 0.9 });
+  add('picketWood', picket('#b98d55', '#8a6535'), { value: 0.2, radius: 0.9 });
+  add('hedge', [
+    rbox(2.4, 0.85, 0.8, C.dgreen, { y: 0.45, segments: 1, bevel: 0.2, surface: 'foliage' }),
+    rbox(2.0, 0.3, 0.7, C.green, { y: 0.9, segments: 1, bevel: 0.12, surface: 'foliage' }),
+    ...[-0.8, 0, 0.8].map((x) => sphere(0.25, C.lgreen, { y: 0.85, x, z: 0.2, segments: 7, rings: 5, surface: 'foliage' })),
+  ], { value: 0.3, radius: 0.9, sway: 'tree' });
+  add('streetlight', [
+    cyl(0.16, 0.22, 0.3, C.dgray, { y: 0.15, segments: 8 }),
+    cyl(0.07, 0.1, 4.6, C.dgray, { y: 2.5, segments: 8 }),
+    box(1.1, 0.07, 0.07, C.dgray, { y: 4.8, x: 0.45 }),
+    rbox(0.6, 0.15, 0.3, C.silver, { y: 4.72, x: 0.95, segments: 1, bevel: 0.04 }),
+    box(0.45, 0.04, 0.2, '#fff2c0', { y: 4.63, x: 0.95, emissive: 0.8 }),
+  ], { value: 0.4, radius: 0.5 });
+  add('trashcan', [
+    lathe([[0.26, 0], [0.34, 0.05], [0.37, 0.9]], '#3f5a46', { segments: 12 }),
+    cyl(0.4, 0.4, 0.06, '#2d4234', { y: 0.93, segments: 12 }),
+    cyl(0.4, 0.4, 0.04, '#2d4234', { y: 0.2, segments: 12 }),
+    box(0.2, 0.05, 0.05, C.dark, { y: 1.0 }),
+  ], { value: 0.25 });
+  add('planter', [
+    cyl(0.35, 0.28, 0.5, '#b86a45', { y: 0.25, segments: 10, surface: 'stone' }),
+    cyl(0.37, 0.37, 0.06, '#9d5836', { y: 0.5, segments: 10 }),
+    sphere(0.38, C.lgreen, { y: 0.75, sy: 0.7, segments: 8, rings: 5, surface: 'foliage' }),
+    ...[[0.15, 0.95, 0.1], [-0.15, 0.9, -0.1], [0.0, 1.0, -0.2], [-0.2, 0.92, 0.2]].map(([x, y, z], i) => sphere(0.1, ['#f06a8c', '#f6cc3a', '#e0463a', '#ffffff'][i], { x, y, z, segments: 5, rings: 4 })),
+  ], { value: 0.2 });
+  add('bikeRack', [
+    ...[-0.6, 0, 0.6].map((x) => torus(0.3, 0.035, C.gray, { y: 0.34, x, ry: PI / 2, radial: 5, segments: 12, surface: 'metal' })),
+    box(1.5, 0.05, 0.1, C.dgray, { y: 0.03 }),
+    ...[-0.3, 0.3].map((x) => cyl(0.3, 0.3, 0.05, C.tire, { y: 0.3, x, z: 0.0, rx: PI / 2, segments: 12, surface: 'rubber' })),
+  ], { value: 0.3 });
+  add('cafeTable', [
+    cyl(0.4, 0.4, 0.05, C.white, { y: 0.78, segments: 12 }), cyl(0.05, 0.05, 0.78, C.dgray, { y: 0.39, segments: 6 }), cyl(0.25, 0.25, 0.04, C.dgray, { y: 0.02, segments: 8 }),
+    ...[0, 1].flatMap((i) => { const z = i ? 0.75 : -0.75; return [box(0.4, 0.05, 0.4, C.red, { y: 0.45, z }), box(0.4, 0.4, 0.05, C.red, { y: 0.68, z: z + (i ? 0.2 : -0.2) }), box(0.05, 0.45, 0.05, C.dgray, { y: 0.22, z: z + 0.15, x: 0.15 }), box(0.05, 0.45, 0.05, C.dgray, { y: 0.22, z: z - 0.15, x: -0.15 })]; }),
+  ], { value: 0.4, radius: 0.9 });
+  add('busStop', [
+    box(3.0, 0.1, 1.3, C.dgray, { y: 0.05 }),
+    ...[-1.4, 1.4].map((x) => box(0.08, 2.4, 0.08, C.dgray, { y: 1.2, x, z: -0.5 })),
+    rbox(3.2, 0.12, 1.5, C.blue, { y: 2.45, segments: 1, bevel: 0.04 }),
+    box(3.0, 1.9, 0.05, C.glass, { y: 1.35, z: -0.6 }),
+    box(2.0, 0.07, 0.4, C.dwood, { y: 0.55, z: -0.35 }),
+    cyl(0.04, 0.04, 2.6, C.dgray, { y: 1.3, x: 1.9, z: 0.4, segments: 6 }), rbox(0.5, 0.5, 0.05, C.blue, { y: 2.6, x: 1.9, z: 0.4, segments: 1, bevel: 0.03 }),
+  ], { value: 1.2, radius: 1.5 });
+
+  // Shops: single storey, big shop windows, awning, sign band
+  const shop = (wall, awn) => {
+    const W = 10, D = 8, H = 4.2, p = [box(W + 0.6, 0.3, D + 0.6, C.lgray, { y: 0.15 })];
+    p.push(...shell(W, D, H, 0.3, wall, {
+      front: [{ x: -2.7, y: 1.9, w: 3.4, h: 2.0 }, { x: 2.6, y: 1.9, w: 3.0, h: 2.0 }],
+      right: [{ z: 0, y: 2.0, w: 1.6, h: 1.4 }], left: [{ z: 0, y: 2.0, w: 1.6, h: 1.4 }],
+      glass: '#9fd6ea', frame: C.dgray,
+    }));
+    p.push(
+      rbox(W + 0.4, 0.5, D + 0.4, C.dgray, { y: H + 0.55, segments: 1, bevel: 0.08 }),
+      rbox(W - 0.4, 0.2, D - 0.4, '#8a8f95', { y: H + 0.85, segments: 1, bevel: 0.05 }),
+      rbox(3.4, 0.9, 3.4, C.lgray, { y: H + 1.4, x: -2.5, z: -1.5, segments: 1, bevel: 0.1 }), cyl(0.7, 0.7, 0.06, C.dark, { y: H + 1.88, x: -2.5, z: -1.5, segments: 10 }),
+      // door, awning with stripes, sign
+      rbox(1.2, 2.2, 0.1, C.dwood, { y: 1.4, x: 0.15, z: D / 2 + 0.05, segments: 1, bevel: 0.04 }),
+      rbox(W - 1, 0.1, 1.5, awn, { y: 3.5, z: D / 2 + 0.75, rx: 0.2, segments: 1, bevel: 0.03, surface: 'fabric' }),
+      ...[-4, -2, 0, 2, 4].map((x) => box(0.9, 0.12, 1.52, C.white, { y: 3.5, x, z: D / 2 + 0.75, rx: 0.2, surface: 'fabric' })),
+      rbox(5, 0.7, 0.14, C.white, { y: 4.4, x: 0, z: D / 2 + 0.1, segments: 1, bevel: 0.04 }), box(4.2, 0.28, 0.16, awn, { y: 4.4, x: 0, z: D / 2 + 0.12 }),
+    );
+    return p;
+  };
+  add('shopRed', shop('#efe3c8', '#c9372f'), { value: 4, radius: 5.8 });
+  add('shopBlue', shop('#d7e4ef', '#2f6fb5'), { value: 4, radius: 5.8 });
+  add('shopGreen', shop('#e8e4cf', '#3f8f56'), { value: 4, radius: 5.8 });
+
+  // Apartment block: 4 floors, windows on every face, balconies on the street side
+  const apartment = (wall, trim) => {
+    const W = 15, D = 10, L = 3.1, F = 4, H = L * F, p = [box(W + 0.8, 0.3, D + 0.8, C.lgray, { y: 0.15 })];
+    const winsF = [];
+    for (let f = 0; f < F; f++) for (const x of [-4.8, 0, 4.8]) if (!(f === 0 && x === 0)) winsF.push({ x, y: 0.3 + f * L + 1.7, w: 1.5, h: 1.5 });
+    p.push(...shell(W, D, H, 0.3, wall, { front: winsF, glass: '#8fc3dc', frame: trim }));
+    // plain glass panes on the back and sides (cheap)
+    for (let f = 0; f < F; f++) {
+      const y = 0.3 + f * L + 1.7;
+      for (const x of [-4.8, -1.6, 1.6, 4.8]) p.push(box(1.3, 1.3, 0.05, '#7fb0c8', { y, x, z: -D / 2 - 0.02 }));
+      for (const z of [-2.8, 0, 2.8]) for (const sx of [-1, 1]) p.push(box(0.05, 1.3, 1.3, '#7fb0c8', { y, x: sx * (W / 2 + 0.02), z }));
+      if (f > 0) for (const x of [-4.8, 4.8]) p.push(box(2.4, 0.15, 1.2, C.lgray, { y: 0.3 + f * L, x, z: D / 2 + 0.6 }), box(2.4, 0.9, 0.05, C.dgray, { y: 0.3 + f * L + 0.55, x, z: D / 2 + 1.18 }));
+    }
+    p.push(
+      rbox(W + 0.5, 0.6, D + 0.5, trim, { y: H + 0.6, segments: 1, bevel: 0.1 }),
+      rbox(5, 1.8, 4, wall, { y: H + 1.2, x: 4, z: -1, segments: 1, bevel: 0.1 }),
+      rbox(1.8, 0.8, 1.8, C.silver, { y: H + 1.0, x: -4, z: 1, segments: 1, bevel: 0.08 }),
+      // entrance: door, canopy, steps
+      rbox(2.2, 2.4, 0.12, C.glass, { y: 1.5, x: 0, z: D / 2 + 0.05, segments: 1, bevel: 0.04 }),
+      rbox(3.2, 0.2, 1.6, C.dgray, { y: 3.0, x: 0, z: D / 2 + 0.8, segments: 1, bevel: 0.05 }),
+      box(3.0, 0.2, 1.2, C.lgray, { y: 0.4, x: 0, z: D / 2 + 0.8 }),
+    );
+    return p;
+  };
+  add('apartmentBrick', apartment('#c1694b', C.white), { value: 10, radius: 8 });
+  add('apartmentCream', apartment('#eadfc2', '#8f98a3'), { value: 10, radius: 8 });
+
+  add('school', (() => {
+    const W = 26, D = 9, L = 3.6, H = L * 2, p = [box(W + 0.8, 0.3, D + 0.8, C.lgray, { y: 0.15 })];
+    const wins = [];
+    for (let f = 0; f < 2; f++) for (let i = 0; i < 6; i++) { const x = -10.5 + i * 4.2; if (Math.abs(x) > 1.5 || f === 1) wins.push({ x, y: 0.3 + f * L + 1.9, w: 1.8, h: 1.6 }); }
+    p.push(...shell(W, D, H, 0.3, '#c8704f', { front: wins, glass: '#9fd0e6', frame: C.white, surface: 'brick' }));
+    for (let f = 0; f < 2; f++) for (let i = 0; i < 6; i++) p.push(box(1.7, 1.5, 0.05, '#86b6cc', { y: 0.3 + f * L + 1.9, x: -10.5 + i * 4.2, z: -D / 2 - 0.02 }));
+    for (let f = 0; f < 2; f++) for (const sx of [-1, 1]) p.push(box(0.05, 1.5, 1.7, '#86b6cc', { y: 0.3 + f * L + 1.9, x: sx * (W / 2 + 0.02), z: 0 }));
+    p.push(
+      rbox(W + 0.6, 0.6, D + 0.6, C.white, { y: H + 0.6, segments: 1, bevel: 0.1 }),
+      // central entrance block with pediment, door and columns
+      rbox(6.4, H + 1.4, 1.4, '#d98a62', { y: (H + 1.4) / 2 + 0.3, z: D / 2 + 0.7, segments: 1, bevel: 0.1, surface: 'brick' }),
+      extrude([[-3.4, 0], [3.4, 0], [0, 1.6]], 1.6, C.white, { y: H + 1.7, z: D / 2 + 0.7 }),
+      rbox(2.6, 2.6, 0.14, C.dwood, { y: 1.6, z: D / 2 + 1.45, segments: 1, bevel: 0.05 }),
+      ...[-1.8, 1.8].map((x) => cyl(0.18, 0.18, 3.2, C.white, { y: 1.9, x, z: D / 2 + 2.0, segments: 8 })),
+      rbox(4.6, 0.25, 1.6, C.white, { y: 3.6, z: D / 2 + 2.0, segments: 1, bevel: 0.05 }),
+      cyl(0.7, 0.7, 0.14, C.white, { y: H + 0.4, z: D / 2 + 1.5, rx: PI / 2, segments: 14 }), cyl(0.58, 0.58, 0.16, '#fff8e0', { y: H + 0.4, z: D / 2 + 1.52, rx: PI / 2, segments: 14 }),
+      rbox(3.5, 1.0, 3.0, C.lgray, { y: H + 1.3, x: 8, z: -1, segments: 1, bevel: 0.1 }),
+      // flag pole + steps
+      cyl(0.08, 0.08, 7, C.silver, { y: 3.5, x: 8.6, z: D / 2 + 2.6, segments: 8 }), box(1.1, 0.7, 0.04, C.red, { y: 6.4, x: 9.2, z: D / 2 + 2.6 }),
+      box(4.8, 0.2, 1.2, C.lgray, { y: 0.4, z: D / 2 + 2.0 }),
+    );
+    return p;
+  })(), { value: 20, radius: 12 });
+
+  add('church', (() => {
+    const W = 8, D = 14, H = 6, p = [box(W + 0.8, 0.3, D + 0.8, C.lgray, { y: 0.15 })];
+    const side = [-4, 0, 4].map((z) => ({ z, y: 3.3, w: 1.2, h: 2.4 }));
+    p.push(...shell(W, D, H, 0.3, '#f1ece0', { left: side, right: side, glass: '#5a7fc0', frame: C.white }));
+    // gable roof along Z
+    p.push(
+      box(W / 2 + 1.0, 0.25, D + 1.2, '#6b4a3a', { y: H + 1.8, x: -W / 4 - 0.3, rz: 0.62, surface: 'roof' }),
+      box(W / 2 + 1.0, 0.25, D + 1.2, '#6b4a3a', { y: H + 1.8, x: W / 4 + 0.3, rz: -0.62, surface: 'roof' }),
+      extrude([[-W / 2, 0], [W / 2, 0], [0, 3.1]], 0.3, '#f1ece0', { y: H + 0.3, z: D / 2 - 0.15, surface: 'stucco' }),
+      extrude([[-W / 2, 0], [W / 2, 0], [0, 3.1]], 0.3, '#f1ece0', { y: H + 0.3, z: -D / 2 + 0.15, surface: 'stucco' }),
+      // tower at the front with belfry and spire
+      rbox(4.2, 12, 4.2, '#f1ece0', { y: 6.3, z: D / 2 + 1.0, segments: 1, bevel: 0.1, surface: 'stucco' }),
+      rbox(4.6, 0.5, 4.6, C.lgray, { y: 12.4, z: D / 2 + 1.0, segments: 1, bevel: 0.06 }),
+      ...[[0, 1], [0, -1], [1, 0], [-1, 0]].map(([dx, dz]) => box(dx ? 0.1 : 1.2, 2.0, dz ? 0.1 : 1.2, C.dark, { y: 10.6, x: dx * 2.12, z: D / 2 + 1.0 + dz * 2.12 })),
+      cone(3.2, 6, '#5a5f66', { y: 15.7, z: D / 2 + 1.0, segments: 4, ry: PI / 4 }),
+      box(0.12, 1.2, 0.12, C.yellow, { y: 19.2, z: D / 2 + 1.0 }), box(0.7, 0.12, 0.12, C.yellow, { y: 19.4, z: D / 2 + 1.0 }),
+      // doors, steps, round window
+      rbox(2.0, 3.0, 0.14, C.dwood, { y: 1.9, z: D / 2 + 3.15, segments: 1, bevel: 0.05 }), box(3.2, 0.2, 1.0, C.lgray, { y: 0.4, z: D / 2 + 3.6 }),
+      cyl(0.9, 0.9, 0.12, '#4a6fb0', { y: 8.6, z: D / 2 + 3.1, rx: PI / 2, segments: 14 }),
+    );
+    return p;
+  })(), { value: 12, radius: 8.5 });
+
+  add('gasStation', (() => {
+    const p = [box(24, 0.12, 16, '#5b5e63', { y: 0.06, x: 0, z: 0 })];
+    // kiosk at the back
+    p.push(...shell(9, 5, 3.6, 0.12, '#e8ecef', { cz: -5.5, cx: -5, front: [{ x: -7.2, y: 1.9, w: 2.6, h: 1.8 }, { x: -3, y: 1.9, w: 1.2, h: 2.2 }], glass: '#9fd6ea', frame: C.red }),
+      rbox(9.6, 0.4, 5.6, C.red, { y: 3.9, x: -5, z: -5.5, segments: 1, bevel: 0.08 }), rbox(4, 0.7, 3, C.lgray, { y: 4.4, x: -6, z: -5.5, segments: 1, bevel: 0.08 }));
+    // canopy over the pumps
+    p.push(rbox(14, 0.6, 8, C.white, { y: 5.6, x: 3, z: 2.5, segments: 1, bevel: 0.1 }), box(14.2, 0.2, 8.2, C.red, { y: 5.9, x: 3, z: 2.5 }));
+    for (const x of [-2.5, 8.5]) for (const z of [-0.5, 5.5]) p.push(cyl(0.22, 0.22, 5.4, C.lgray, { y: 2.8, x, z, segments: 8 }));
+    for (const x of [0.5, 5.5]) {
+      p.push(box(3.4, 0.25, 1.2, C.lgray, { y: 0.25, x, z: 2.5 }),
+        rbox(0.9, 1.7, 0.6, C.white, { y: 1.1, x: x - 0.5, z: 2.5, segments: 1, bevel: 0.08 }), rbox(0.9, 1.7, 0.6, C.white, { y: 1.1, x: x + 0.5, z: 2.5, segments: 1, bevel: 0.08 }),
+        box(0.7, 0.4, 0.04, C.dark, { y: 1.6, x: x - 0.5, z: 2.82 }), box(0.7, 0.4, 0.04, C.dark, { y: 1.6, x: x + 0.5, z: 2.82 }),
+        box(0.9, 0.3, 0.64, C.red, { y: 1.9, x: x - 0.5, z: 2.5 }), box(0.9, 0.3, 0.64, C.blue, { y: 1.9, x: x + 0.5, z: 2.5 }));
+    }
+    // price pylon + air/ice
+    p.push(cyl(0.12, 0.12, 6, C.dgray, { y: 3, x: 10.5, z: 7, segments: 8 }), rbox(1.8, 1.8, 0.3, C.red, { y: 6.2, x: 10.5, z: 7, segments: 1, bevel: 0.06 }),
+      ...[0, 1, 2].map((i) => box(1.4, 0.22, 0.34, '#ffe45a', { y: 6.7 - i * 0.5, x: 10.5, z: 7.02, emissive: 0.6 })), rbox(1.4, 1.0, 0.8, C.blue, { y: 0.6, x: -10, z: -1, segments: 1, bevel: 0.06 }));
+    return p;
+  })(), { value: 10, radius: 9.5 });
+
+
   return P;
 }

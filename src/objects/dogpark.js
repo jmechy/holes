@@ -391,6 +391,22 @@ export function buildProtos() {
     }
     return p;
   })(), { value: 1.4 });
+  // Orderly small park furniture: 2-unit fence section (along X), clipped hedge section, cast-iron lamp post.
+  add('fence', (() => {
+    const p = [B(2.0, 0.07, 0.07, C.white, 0, 0.82, 0), B(2.0, 0.07, 0.07, C.white, 0, 0.36, 0)];
+    for (const x of [-0.95, 0.95]) p.push(B(0.12, 1.1, 0.12, C.white, x, 0.55, 0), B(0.16, 0.05, 0.16, C.white, x, 1.12, 0));
+    for (let i = 0; i < 6; i++) p.push(B(0.12, 0.92, 0.04, C.white, -0.7 + i * 0.28, 0.46, 0.05), cone(0.085, 0.1, C.white, { x: -0.7 + i * 0.28, y: 0.97, z: 0.05, segments: 4 }));
+    return p;
+  })(), { value: 0.35, radius: 1.0 });
+  add('hedge', [
+    RB(2.0, 0.85, 0.8, C.leafB, 0, 0.43, 0, { bevel: 0.25, segments: 1, surface: 'foliage', textureStrength: 0.6 }),
+    ...[-0.6, 0, 0.6].map((x, i) => S(0.4, [C.leafA, C.leafC, C.leafA][i], { x, y: 0.82, sy: 0.7 })),
+  ], { value: 0.4, radius: 1.0 });
+  add('lampPost', [
+    cyl(0.2, 0.26, 0.5, C.dark, { y: 0.25, segments: 8 }), cyl(0.07, 0.1, 3.3, C.dark, { y: 2.1, segments: 8 }), cyl(0.15, 0.15, 0.1, C.dark, { y: 3.8, segments: 8 }),
+    cyl(0.3, 0.2, 0.4, C.yellow, { y: 4.0, segments: 8, emissive: 1 }), cone(0.36, 0.3, C.dark, { y: 4.35, segments: 8 }),
+    torus(0.14, 0.025, C.dark, { y: 3.1, x: 0.13, rx: PI / 2, radial: 4, segments: 8 }), sphere(0.05, C.dark, { y: 4.55, segments: 6, rings: 4 }),
+  ], { value: 1.0, radius: 0.35 });
   add('doghouse', (() => {
     const p = [];
     p.push(RB(1.8, 1.2, 1.6, C.red, 0, 0.6, 0, { bevel: 0.06 }), B(1.9, 0.1, 1.7, '#8a2c1e', 0, 0.05, 0));

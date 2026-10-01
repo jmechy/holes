@@ -472,7 +472,7 @@ export function buildProtos() {
     for (let i = 0; i < 5; i++) p.push(...texBox(0.22, 1.1, 0.22, C.oakD, ['#3a2712', C.oak], 8, 180 + i, -1.9 + i * 0.95, 0.55, 0, { px: 0.07, faces: 'xXzZ' }), B(0.28, 0.1, 0.28, C.oak, -1.9 + i * 0.95, 1.15, 0));
     p.push(B(0.06, 0.06, 0.16, '#c8985a', -1.0, 0.7, 0.08), B(0.06, 0.06, 0.16, '#c8985a', 0.9, 0.7, -0.08));
     return p;
-  })(), { value: 1.4 });
+  })(), { value: 0.9 });
   add('minecart', (() => {
     const p = [];
     p.push(B(1.3, 0.1, 0.9, '#7a7a7a', 0, 0.42, 0));
@@ -491,27 +491,27 @@ export function buildProtos() {
   // ---------- large ----------
   add('oakTree', voxTree({ trunkH: 3.6, trunkW: 0.9, cell: 0.9, y0: 2.7, leafCols: [C.leaf, C.leafD, '#4aa034'], seed: 200,
     layers: [sq(5, true), sq(5, true), sq(3), plus()],
-  }), { value: 3, radius: 2.0 });
+  }), { value: 1.7, radius: 2.0 });
   add('oakTreeBig', voxTree({ trunkH: 5.4, trunkW: 1.2, cell: 0.86, y0: 4.0, leafCols: [C.leaf, C.leafD, '#4aa034'], seed: 210,
     layers: [sq(7, true), sq(7, true), sq(5, true), sq(5, true), sq(3), plus()],
-    extra: [B(1.6, 0.9, 1.6, C.oakD, 0, 0.45, 0), B(0.5, 0.5, 1.8, C.oak, 0, 0.3, 1.0), B(1.8, 0.5, 0.5, C.oak, 1.0, 0.3, 0)] }), { value: 7, radius: 2.8 });
+    extra: [B(1.6, 0.9, 1.6, C.oakD, 0, 0.45, 0), B(0.5, 0.5, 1.8, C.oak, 0, 0.3, 1.0), B(1.8, 0.5, 0.5, C.oak, 1.0, 0.3, 0)] }), { value: 5, radius: 2.8 });
   add('birchTree', (() => {
     const p = [...texBox(0.8, 4.4, 0.8, C.birch, ['#d0ccbc', '#f4f0e4'], 20, 220, 0, 2.2, 0, { px: 0.13 })];
     for (let i = 0; i < 7; i++) p.push(B(0.34 + (i % 3) * 0.14, 0.09, 0.03, C.birchD, ((i % 2) - 0.5) * 0.3, 0.6 + i * 0.55, ((i + 1) % 2) ? 0.41 : -0.41), B(0.03, 0.09, 0.3, C.birchD, i % 2 ? 0.41 : -0.41, 0.85 + i * 0.5, 0.05));
     p.push(...leaves(0, 3.4, 0, [sq(5, true), sq(5, true), sq(3), plus()], 0.72, [C.leafB, C.leaf, '#84c85a'], 221));
     return p;
-  })(), { value: 3, radius: 1.8 });
+  })(), { value: 1.7, radius: 1.8 });
   add('cherryTree', voxTree({ trunkH: 3.8, trunkW: 0.9, cell: 0.9, y0: 2.8, leafCols: [C.leafPink, '#e888b0', '#f8c4dc'], trunkC: '#5a3a30', seed: 230,
     layers: [sq(5, true), sq(5, true), sq(3), plus()],
-    extra: [B(0.14, 0.14, 0.14, '#f8c4dc', 1.5, 0.08, 0.6), B(0.14, 0.14, 0.14, '#f8c4dc', -0.9, 0.08, -1.3), B(0.14, 0.14, 0.14, '#e888b0', 0.6, 0.08, -1.0), B(0.14, 0.14, 0.14, '#f8c4dc', -1.4, 0.08, 0.9)] }), { value: 3, radius: 2.0 });
+    extra: [B(0.14, 0.14, 0.14, '#f8c4dc', 1.5, 0.08, 0.6), B(0.14, 0.14, 0.14, '#f8c4dc', -0.9, 0.08, -1.3), B(0.14, 0.14, 0.14, '#e888b0', 0.6, 0.08, -1.0), B(0.14, 0.14, 0.14, '#f8c4dc', -1.4, 0.08, 0.9)] }), { value: 1.7, radius: 2.0 });
   add('spruceTree', (() => {
     const p = [...trunk(0.8, 2.6, C.oakD, 240)];
     const c = ['#2b6f34', '#1f5a2a', '#347a3c'];
     p.push(...leaves(0, 1.4, 0, [sq(5, true), sq(5, true), sq(3), sq(3), plus(), ['X']], 0.88, c, 241));
     p.push(B(0.3, 0.3, 0.3, C.yellow, 0, 6.85, 0));
     return p;
-  })(), { value: 3, radius: 2.0 });
-  add('hut', house({ w: 4, d: 4, wallH: 2.6, wallC: C.plank, roofC: C.oakD, doorC: C.oak, step: 3, seed: 300, flowers: false }), { value: 5 });
+  })(), { value: 1.7, radius: 2.0 });
+  add('hut', house({ w: 4, d: 4, wallH: 2.6, wallC: C.plank, roofC: C.oakD, doorC: C.oak, step: 3, seed: 300, flowers: false }), { value: 4 });
   add('house', house({ w: 6, d: 5, wallH: 3.2, wallC: C.cobble, roofC: C.roof, doorC: C.oak, step: 4, seed: 310, chimney: true }), { value: 9 });
   add('farmHouse', house({ w: 7, d: 5, wallH: 3.2, wallC: '#d8c8a0', roofC: '#8a3a2a', doorC: C.oak, step: 4, seed: 320, chimney: true }), { value: 10 });
   add('barn', (() => {

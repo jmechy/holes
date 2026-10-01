@@ -189,7 +189,15 @@ export default {
     for (let i = 0; i < 9; i++) GSE.cart.push({ x: 44 + i * 3.1, z: 50, rotY: PI / 2 });
     // baggage trains parked in a line (tug + carts behind) beside the aircraft stands
     for (const x0 of [-30, -2, 26, 54]) GSE.train.push({ x: x0, z: 9 });
-    // helicopter pads along the west strip
+    // general-aviation apron east of the vertical runway: tie-down stalls for the small planes
+    addDecal(rect(119.5, 47, 19, 100), '#6a6e75', { style: 'concrete' });
+    const ga = [rect(112.4, 47, 0.3, 100)];
+    for (let i = 0; i <= 8; i++) ga.push(rect(121, 2 + i * 11.5, 14, 0.2));
+    addDecal(merge(ga), WHITE);
+    // marked crew walkway through the middle of the apron (bollards, benches and bins are laid out along it)
+    addDecal(rect(0, 0, 70, 3.2), '#7d8086', { style: 'concrete' });
+    addDecal(merge([rect(0, -1.5, 70, 0.15), rect(0, 1.5, 70, 0.15)]), WHITE);
+
     addDecal(merge(Array.from({ length: 6 }, (_, i) => circle(-114, 8 + i * 12, 5, 20))), '#6b6f75', { style: 'concrete' });
     addDecal(merge(Array.from({ length: 6 }, (_, i) => circle(-114, 8 + i * 12, 4.3, 20))), YELLOW);
     addDecal(merge(Array.from({ length: 6 }, (_, i) => circle(-114, 8 + i * 12, 4.0, 20))), '#6b6f75');
@@ -256,8 +264,11 @@ export default {
       ctx.placeOnRoute(name, R[key], { count, speed, offset });
     taxi('airliner', 'taxi', 1, 4);
     taxi('bizjet', 'taxi', 2, 4);
+    taxi('propplaneRed', 'taxi', 1, 4);
+    taxi('propplaneBlue', 'taxi', 1, 4);
     taxi('followme', 'taxi', 2, 4);
     taxi('airlinerRed', 'rwy', 1, 3.5);
+    taxi('propplaneGreen', 'rwy', 1, 3.5);
 
     // --- Airliners parked at their stands (nose toward the terminal side)
     place('airliner', -62, -14, PI / 2, 1);
@@ -265,12 +276,15 @@ export default {
     place('airliner', 14, -14, PI / 2, 1);
     place('airlinerRed', 52, -12, PI / 2, 1);
 
+    // --- Small planes: tied down in a neat row on the general-aviation apron (tarmac only), each in its own livery
+    const LIV = ['propplane', 'propplaneRed', 'propplaneBlue', 'propplaneGreen', 'propplaneOrange', 'propplanePurple', 'propplaneTeal', 'propplane'];
+    const GA_STALLS = [];
+    for (let i = 0; i < 8; i++) GA_STALLS.push({ x: 119, z: 8 + i * 11.5 });
+    GA_STALLS.forEach((st, i) => place(LIV[i], st.x, st.z, PI, 1, { move: null }));
+
     // --- Helicopters on their pads
     place('helicopter', -110, -20, 0, 1, { move: null });
     for (let i = 0; i < 6; i++) if (i !== 2) place('helicopter', -114, 8 + i * 12, 0, 1, { move: null });
-    const PROP = { move: { type: 'drive', speed: 3, range: 12, turn: 0.6 } };
-    scatter('propplane', 8, [-125, -100, -45, 120], 1, 1, 40, PROP);
-    scatter('propplane', 5, [78, 90, -45, 125], 1, 1, 40, PROP);
 
     // --- Service vehicles: trucks shuttle along the service road, staged rows wait in their bays
     const svc = (name, key, count) => ctx.placeOnRoute(name, R[key], { count, speed: 5, offset: 2.5 });
@@ -298,30 +312,77 @@ export default {
     LOT_TERM.forEach((s) => { if (rand() < 0.6) ctx.placeParked(ctx.pick(cars), s); });
     LOT_STAFF.forEach((s) => { if (rand() < 0.55) ctx.placeParked(ctx.pick(cars.slice(0, 4)), s); });
 
-    // --- Starter cluster around the spawn
-    const START = [-28, 28, -28, 28];
-    const cases = ['suitcase', 'suitcaseBlue', 'suitcaseGreen', 'suitcaseYellow', 'suitcasePurple'];
-    for (const c of cases) scatter(c, 3, START, 0.9, 1.1, 12);
-    scatter('cone', 8, START, 0.9, 1.1, 12);
-    scatter('crew', 5, START, 0.9, 1.1, 12);
-    scatter('chock', 6, START, 0.9, 1.1, 12);
+    // ======= Orderly small items =======
+    const T0 = { tight: true, overlap: 0.05 };      // belongs next to / under a big parked object
+    const ST = { tight: true, overlap: 0.05, move: null };
+    // local (forward lx, lateral lz) -> world for an object placed at (x,z) with rotation r
+    const at = (x, z, r, lx, lz) => [x + lx * Math.cos(r) + lz * Math.sin(r), z - lx * Math.sin(r) + lz * Math.cos(r)];
+    const put = (n, x, z, r, opts = ST) => place(n, x, z, r, 1, opts);
+    // a parked aircraft's ground equipment: cones at nose/tail/wingtips, chocks at the wheels, ground power unit, crew
+    const servicing = ({ x, z, r }, { len, span, mainX, mainZ, noseX, crew = 1, gpu = true }) => {
+      for (const [lx, lz] of [[len / 2 + 2.5, 0], [-len / 2 - 2.5, 0], [-len * 0.1, span / 2 + 1.8], [-len * 0.1, -span / 2 - 1.8]]) put('cone', ...at(x, z, r, lx, lz), 0);
+      for (const sgn of [-1, 1]) {
+        for (const dx of [-0.75, 0.75]) put('chock', ...at(x, z, r, mainX + dx, sgn * mainZ), r);
+      }
+      if (noseX != null) for (const dx of [-0.6, 0.6]) put('chock', ...at(x, z, r, noseX + dx, 0), r + PI / 2);
+      if (gpu) put('gpu', ...at(x, z, r, noseX ?? len / 3, 3.2), r + PI / 2);
+      for (let i = 0; i < crew; i++) place('crew', ...at(x, z, r, noseX ?? len / 3, -3 - i * 1.2), undefined, 1, T0);
+    };
+    const BIG = { len: 23.8, span: 22.4, mainX: -0.95, mainZ: 1.1, noseX: 7.1, crew: 2 };
+    for (const [x, z] of [[-62, -14], [-24, -14], [14, -14], [52, -12]]) servicing({ x, z, r: PI / 2 }, BIG);
+    const JUMBO = { len: 30, span: 28.8, mainX: -1.2, mainZ: 1.35, noseX: 9, crew: 2 };
+    for (const [x, z] of [[-62, 36], [22, 34]]) servicing({ x, z, r: PI / 2 }, JUMBO);
+    for (const [x, z] of [[40, 74], [70, 74], [-70, 78], [-100, 78]]) servicing({ x, z, r: PI / 2 }, { len: 15, span: 13, mainX: -1, mainZ: 1, noseX: 4, crew: 1 });
+    GA_STALLS.forEach(({ x, z }) => {
+      for (const lz of [-1, 1]) put('chock', ...at(x, z, PI, 1.6, lz * 0.95), PI);
+      for (const lz of [-1, 1]) put('cone', ...at(x, z, PI, -0.5, lz * 6.4), 0);
+      put('cone', ...at(x, z, PI, -5.2, 0), 0);
+      if (z < 60) place('crew', ...at(x, z, PI, 4, 3), undefined, 1, { ...T0, move: { type: 'walk', speed: 1.3, range: 4 } });
+    });
+    for (let z = 8; z < 100; z += 11.5 * 2) put('gpu', 113.5, z + 5.7, PI / 2);
+    for (let z = 6; z < 96; z += 23) { put('lamp', 126.8, z, 0); put('bollard', 111.6, z + 2, 0); put('trashCan', 111.6, z + 8, 0); }
 
-    // --- Small stuff: piles of luggage, crew, cones, chocks
-    for (const c of cases) {
-      scatter(c, 34, APRON, 0.9, 1.1, 12);
-      scatter(c, 16, ALL, 0.9, 1.1, 12);
+    // work zones: a few coned-off patches of the apron
+    for (const [cx, cz] of [[-82, -28], [-40, 56], [62, -30]]) {
+      for (const [dx, dz] of [[-3, -3], [0, -3], [3, -3], [3, 0], [3, 3], [0, 3], [-3, 3], [-3, 0]]) put('cone', cx + dx, cz + dz, 0);
+      put('gpu', cx, cz, rand() * 6);
     }
-    scatter('crew', 55, APRON, 0.9, 1.1, 12);
-    scatter('crew', 45, ALL, 0.9, 1.1, 12);
-    scatter('chock', 50, APRON, 0.9, 1.1, 12);
-    scatter('chock', 20, ALL, 0.9, 1.1, 12);
-    scatter('cone', 55, APRON, 0.9, 1.1, 12);
-    scatter('cone', 55, ALL, 0.9, 1.1, 12);
-    for (let x = -S + 6; x < S - 6; x += 7) {
-      place('cone', x + randRange(-1.5, 1.5), -49 + randRange(-0.4, 0.4), undefined, 1);
-      place('cone', x + randRange(-1.5, 1.5), -61 + randRange(-0.4, 0.4), undefined, 1);
-    }
-    field('suitcase', 10);
-    field('cone', 20);
+
+    // apron floodlights in two straight rows through the stands, service-road streetlights, bollards at the GSE bays
+    for (let x = -90; x <= 70; x += 10) { put('lamp', x + 4, 5, 0); put('lamp', x + 4, -28, 0); }
+    for (let z = -30; z <= 52; z += 10) put('lamp', 82, z, 0);
+    for (let z = -30; z <= 56; z += 12) put('lamp', -91, z, 0);
+    for (let i = 0; i < 12; i++) { put('bollard', 42 + i * 2.8, 17.5, 0); put('bollard', 42 + i * 2.8, 55, 0); }
+
+    for (let x = -34; x <= 34; x += 3.4) { put('bollard', x, -2.2, 0); put('bollard', x + 1.7, 2.2, 0); }
+    for (const x of [-27, -9, 9, 27]) { put('bench', x, 3.4, 0); put('trashCan', x + 2.4, 3.4, 0); put('bench', x + 5, -3.4, PI); }
+
+    // terminal frontage (baggage claim: orderly luggage rows, trolleys, benches, bins, bollards, hedges)
+    const cases = ['suitcase', 'suitcaseBlue', 'suitcaseGreen', 'suitcaseYellow', 'suitcasePurple'];
+    for (let i = 0; i < 14; i++) { put(cases[i % 5], -33 + i * 2.3, 63.2, 0); put(cases[(i + 2) % 5], -33 + i * 2.3, 64.6, 0); }
+    for (let i = 0; i < 8; i++) put('trolley', -33 + i * 3.4, 61.4, 0);
+    for (let x = -38; x <= -2; x += 3.2) put('bollard', x, 59.4, 0);
+    for (const x of [-34, -26, -14, -6]) { put('bench', x, 66.4, 0); put('trashCan', x + 2.6, 66.4, 0); }
+    for (let x = -38; x <= -2; x += 12) put('lamp', x, 58, 0);
+    for (let x = -38; x <= -3; x += 3.2) put('hedge', x, 90.5, PI);
+    for (let x = -38; x <= -2; x += 6) put('crew', x, 61.4 + 0 * 0, undefined, T0);
+
+    // car park: hedge border, streetlights, bins, bus-stop benches; staff lot: fence line
+    for (let x = -40; x <= 0; x += 3.2) put('hedge', x, 118, PI);
+    for (let z = 93; z <= 116; z += 3.2) { put('hedge', -41.2, z, PI / 2); put('hedge', 1.2, z, PI / 2); }
+    for (const [x, z] of [[-39, 98], [-20, 98], [-1, 98], [-39, 111], [-20, 111], [-1, 111]]) put('lamp', x, z, 0);
+    for (const x of [-30, -10]) { put('bench', x, 90, PI); put('trashCan', x + 2.4, 90, 0); }
+    for (let z = 64; z <= 88; z += 3.6) put('fenceSeg', -125, z, PI / 2);
+    for (let x = -124; x <= -102; x += 3.6) { put('fenceSeg', x, 64, 0); put('fenceSeg', x, 89, 0); }
+    for (let z = 66; z <= 88; z += 6) put('lamp', -102, z, 0);
+
+    // safety fences along the grass strips beside the apron and the runway, with bushes behind them
+    for (let z = -40; z <= 124; z += 3.8) { put('fenceSeg', -98, z, PI / 2); put('fenceSeg', 88.5, z, PI / 2); }
+    for (let z = -40; z <= 124; z += 8) { put('bush', -96.3 + rand() * 0.6, z + rand() * 3, 0); put('bush', 90.5 + rand() * 0.6, z + rand() * 3, 0); }
+    for (let x = -S + 8; x < S - 8; x += 3.8) put('fenceSeg', x, -45, 0);
+    for (let x = -S + 8; x < S - 8; x += 10) put('bush', x + rand() * 3, -43.5, 0);
+    for (const [x, z] of [[-105, 100], [84, 20], [84, -30]]) put('windsock', x, z, 0);
+    // flower-bed style shrubs near the pond / corners
+    for (let i = 0; i < 14; i++) put('bush', -112 + randRange(-8, 8), 112 + randRange(-8, 8), undefined, { tight: true, overlap: 0.9, move: null });
   },
 };

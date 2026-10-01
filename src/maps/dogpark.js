@@ -133,25 +133,29 @@ export default {
   populate(ctx) {
     const { place, randRange, rand, size: S } = ctx;
     const inPond = (x, z) => Math.hypot(x - POND.x, z - POND.z) < POND.r + 1.5;
-    const put = (name, x, z, rot, sc = 1) => !inPond(x, z) && !inLotZone(x, z) && place(name, x, z, rot, sc);
-    const scatter = (name, n, [x0, x1, z0, z1], sMin = 1, sMax = 1, tries = 30) => {
+    // Distance-ish test against the two gravel paths (random scatter keeps off them; furniture is placed deliberately)
+    const onPath = (x, z) => {
+      const th = Math.atan(26 / 22 * Math.cos(x / 22) + 8 / 9 * Math.cos(x / 9));
+      if (Math.abs(z - pathZ(x)) * Math.cos(th) < 4.2) return true;
+      const t2 = Math.atan(40 / 25 * Math.cos(z / 25));
+      return Math.abs(x - (40 * Math.sin(z / 25) - 20)) * Math.cos(t2) < 3.8;
+    };
+    const put = (name, x, z, rot, sc = 1) => !inPond(x, z) && !inLotZone(x, z) && !onPath(x, z) && place(name, x, z, rot, sc);
+    const putAt = (name, x, z, rot, sc = 1) => !inPond(x, z) && place(name, x, z, rot, sc); // deliberate furniture
+    const scatter = (name, n, [x0, x1, z0, z1], tries = 30) => {
       for (let i = 0; i < n; i++) {
         for (let t = 0; t < tries; t++) {
-          if (put(name, randRange(x0, x1), randRange(z0, z1), undefined, randRange(sMin, sMax))) break;
+          if (put(name, randRange(x0, x1), randRange(z0, z1), undefined, 1)) break;
         }
       }
     };
     const ALL = [-S + 3, S - 3, -S + 3, S - 3];
-    const START = [-28, 28, -28, 28];
-
-    // Dense ring of tiny starters around spawn (6-24 units out)
-    const ring = (name, n) => {
-      for (let i = 0; i < n; i++) for (let t = 0; t < 12; t++) {
-        const a = rand() * Math.PI * 2, d = randRange(6, 24);
-        if (put(name, Math.cos(a) * d, Math.sin(a) * d, undefined, 1)) break;
-      }
+    const faceRot = (dx, dz) => Math.atan2(dx, dz); // rotY that points local +Z along (dx,dz)
+    const runRot = (dx, dz) => -Math.atan2(dz, dx); // rotY that lays local +X along (dx,dz)
+    const pathAt = (t) => { // centre + unit normal (towards +z side) of the winding path
+      const th = Math.atan2(26 / 22 * Math.cos(t / 22) + 8 / 9 * Math.cos(t / 9), 1);
+      return { x: pathX(t), z: pathZ(t), nx: -Math.sin(th), nz: Math.cos(th), th };
     };
-    const STARTER = () => { ring('tennisBall', 12); ring('bone', 10); ring('frisbeeRed', 5); ring('frisbeeBlue', 4); ring('chewRope', 5); ring('squeakyToy', 5); ring('foodBowl', 4); ring('waterBowl', 3); ring('puppy', 3); ring('bush', 4); };
 
     // --- Car park + roadside parking (cars only in stalls / along the curb)
     const carNames = ['car', 'carBlue', 'carYellow', 'carGreen', 'carWhite'];
@@ -167,42 +171,99 @@ export default {
     place('gazebo', -35, 15, 0, 1);
     place('gazebo', 85, 20, 0, 1);
 
-    // --- Large: trees, wash station, carts
+    // --- Large: trees, wash stations, carts (kept off the paths)
     scatter('treeBig', 10, ALL);
     scatter('tree', 24, ALL);
     scatter('treeBlossom', 12, ALL);
     scatter('pineTree', 12, ALL);
-    scatter('dogWash', 4, [-30, 60, -110, -70]);
-    place('dogWash', -10, 40, 0, 1);
-    scatter('iceCreamCart', 2, ALL, 1, 1, 30);
+    // dog wash bays in a tidy row beside the entrance road, one more by the dog run
+    [[4, -86], [17, -86], [30, -86], [43, -86]].forEach(([x, z]) => putAt('dogWash', x, z, 0, 1));
+    put('dogWash', -10, 40, 0, 1);
     ctx.placeOnRoute('iceCreamCart', routeMain, { count: 2, speed: 3, offset: 0.8, speedJitter: 0.15 });
     ctx.placeOnRoute('iceCreamCart', routeCross, { count: 1, speed: 3, offset: 0.8 });
-    scatter('umbrellaTable', 6, PICNIC);
-    scatter('doghouse', 12, ALL);
-    scatter('picnicTable', 12, PICNIC);
+    putAt('iceCreamCart', 10, -22, 0.3, 1); putAt('iceCreamCart', 62, 12, -0.4, 1);
+    scatter('doghouse', 8, ALL);
+
+    // --- Picnic lawn: tables and umbrella tables on the lawn around the blankets, benches facing in
+    const pk = [[62, 56], [62, 76], [80, 56], [82, 76], [104, 76], [104, 96], [86, 98], [64, 98]];
+    pk.forEach(([x, z], i) => put(i % 2 ? 'umbrellaTable' : 'picnicTable', x, z, i % 2 ? 0 : Math.PI / 2 * (i % 4), 1));
+    scatter('picnicTable', 6, PICNIC); scatter('umbrellaTable', 3, PICNIC);
     scatter('picnicTable', 4, ALL);
+    // hedge L around the picnic lawn (two gaps for entrances)
+    for (let x = 51; x <= 107; x += 2.1) if (!(x > 72 && x < 80)) putAt('hedge', x, 49, 0, 1);
+    for (let z = 51; z <= 107; z += 2.1) if (!(z > 76 && z < 84)) putAt('hedge', 50.5, z, Math.PI / 2, 1);
 
-    // --- Agility area
-    scatter('agilityJump', 12, AGILITY);
-    scatter('tunnel', 6, AGILITY);
-    scatter('seesaw', 4, AGILITY);
-    scatter('weavePoles', 8, AGILITY);
-    scatter('greatDane', 4, AGILITY);
-    scatter('dalmatian', 3, AGILITY);
-    scatter('corgi', 5, AGILITY);
-    scatter('personHat', 4, AGILITY);
+    // --- Fenced dog run (agility area): white picket fence on all four sides, gate gap on the east side by the path
+    const [ax0, ax1, az0, az1] = AGILITY;
+    for (let x = ax0 + 1; x <= ax1 - 0.9; x += 2.05) { putAt('fence', x, az0, 0, 1); putAt('fence', x, az1, 0, 1); }
+    for (let z = az0 + 3; z <= az1 - 2.9; z += 2.05) { putAt('fence', ax0, z, Math.PI / 2, 1); if (!(z > 68 && z < 77)) putAt('fence', ax1, z, Math.PI / 2, 1); }
+    // gate station just outside the gate: water + food bowls, bag dispenser bin, bench, lamp
+    putAt('waterBowl', ax1 + 2.2, 70, 0, 1); putAt('foodBowl', ax1 + 2.2, 75, 0, 1);
+    putAt('trashCan', ax1 + 2.4, 66, 0, 1); putAt('poopBag', ax1 + 3.4, 66.4, 0, 1);
+    putAt('bench', ax1 + 2.6, 62, Math.PI / 2 + Math.PI, 1); putAt('bench', ax1 + 2.6, 82, Math.PI / 2 + Math.PI, 1);
+    putAt('lampPost', ax1 + 2.2, 78.4, 0, 1); putAt('lampPost', ax1 + 2.2, 61, 0, 1);
+    putAt('ballBucket', ax1 - 1.6, 66, 0, 1); putAt('ballBucket', ax1 - 1.6, 78, 0, 1);
+    // agility equipment + resident dogs, then play toys scattered inside the run only
+    scatter('agilityJump', 12, AGILITY); scatter('tunnel', 6, AGILITY); scatter('seesaw', 4, AGILITY); scatter('weavePoles', 8, AGILITY);
+    scatter('greatDane', 4, AGILITY); scatter('dalmatian', 3, AGILITY); scatter('corgi', 5, AGILITY); scatter('personHat', 4, AGILITY);
+    const RUN = [ax0 + 2, ax1 - 2, az0 + 2, az1 - 2];
+    for (const [n, k] of [['tennisBall', 14], ['bone', 8], ['frisbeeRed', 6], ['frisbeeBlue', 6], ['chewRope', 6], ['squeakyToy', 6], ['waterBowl', 2], ['foodBowl', 2]]) scatter(n, k, RUN, 20);
 
-    // --- Benches and cans along the path
-    for (let t = -S + 10; t < S - 8; t += 14) {
-      const z = pathZ(t);
-      place('bench', pathX(t), z + 5.8, 0, 1);
-      place('trashCan', pathX(t + 6), z - 4.8, undefined, 1);
-      place('hydrant', pathX(t + 9), z + 4.5, undefined, 1);
+    // --- Gravel-path furniture: a station every 14 units (bench + bin + bag + bushes), lamp posts every 21, bowls at every other station
+    let st = 0;
+    for (let t = -S + 10; t < S - 8; t += 14, st++) {
+      const c = pathAt(t), side = st % 2 ? -1 : 1;
+      const d = (o, along = 0) => { const a = pathAt(t + along); return [a.x + a.nx * o, a.z + a.nz * o]; };
+      const [bx, bz] = d(5.0 * side);
+      putAt('bench', bx, bz, faceRot(-c.nx * side, -c.nz * side), 1); // seat faces the path
+      const [tx, tz] = d(5.0 * side, 3.0); putAt('trashCan', tx, tz, 0, 1);
+      const [px, pz] = d(5.0 * side, 4.2); putAt('poopBag', px, pz, 0, 1);
+      if (st % 2 === 0) { const [wx, wz] = d(-4.6 * side, 1); putAt('waterBowl', wx, wz, 0, 1); const [fx, fz] = d(-4.6 * side, 2.4); putAt('foodBowl', fx, fz, 0, 1); }
+      if (st % 3 === 0) { const [hx, hz] = d(-4.6 * side, 5); putAt('hydrant', hx, hz, 0, 1); }
+      // flowering shrubs flank the path between stations
+      for (const al of [5, 8, 11]) { const [sx, sz] = d(4.5 * (al % 2 ? 1 : -1), al); putAt('bush', sx, sz, undefined, 1); }
     }
-    scatter('bench', 12, ALL);
-    scatter('trashCan', 24, ALL);
+    for (let t = -S + 14; t < S - 8; t += 21) { const a = pathAt(t), sd = Math.floor(t / 21) % 2 ? -1 : 1; putAt('lampPost', a.x + a.nx * 4.0 * sd, a.z + a.nz * 4.0 * sd, 0, 1); }
+    // central junction (spawn): shrub borders edge both paths, with a bin + bag every 7 units, so the start reads as a planted park walk
+    for (let t = -32; t <= 32; t += 3.4) for (const sd of [-1, 1]) { const a = pathAt(t); putAt('bush', a.x + a.nx * 4.4 * sd, a.z + a.nz * 4.4 * sd, undefined, 1); }
+    for (let z = -32; z <= 32; z += 3.4) for (const sd of [-1, 1]) putAt('bush', 40 * Math.sin(z / 25) - 20 + sd * 4.0, z, undefined, 1);
+    for (let t = -28; t <= 28; t += 7) { const a = pathAt(t), sd = (t / 7) % 2 ? 1 : -1; putAt('trashCan', a.x + a.nx * 3.7 * sd, a.z + a.nz * 3.7 * sd, 0, 1); putAt('poopBag', a.x + a.nx * 3.7 * sd + 0.9, a.z + a.nz * 3.7 * sd, 0, 1); }
+    // cross path: bins and lamps at regular intervals as well
+    for (let z = -70; z <= 86; z += 22) {
+      const x = 40 * Math.sin(z / 25) - 20;
+      putAt('lampPost', x + 3.6, z, 0, 1); putAt('trashCan', x - 3.6, z + 6, 0, 1); putAt('bench', x + 3.8, z + 11, faceRot(-1, 0), 1);
+    }
 
-    // --- Dogs
+    // --- Car-park edge: lamp posts at the lot corners and a hedge row between the road and the park
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) putAt('lampPost', LOT_RECT.cx + sx * (LOT_RECT.w / 2 + 1.5), LOT_RECT.cz + sz * (LOT_RECT.d / 2 + 1.5), 0, 1);
+    for (let x = -106; x <= 106; x += 2.1) if (!(x > LOT_RECT.cx - 6 && x < LOT_RECT.cx + 6) && !(x > LOT_RECT.cx + 8 && x < LOT_RECT.cx + 16)) putAt('hedge', x, -94.5, 0, 1);
+    for (let x = -50; x <= -20; x += 7.5) putAt('trashCan', x, -66.4, 0, 1);
+
+    // --- Sandbox play area (-20,-55): toys and a bench on each side; hedge on the far sides
+    for (let a = -8; a <= 8; a += 2.1) { putAt('hedge', -20 + a, -64, 0, 1); putAt('hedge', -29, -55 + a, Math.PI / 2, 1); }
+    putAt('bench', -9.5, -55, Math.PI / 2, 1); putAt('bench', -20, -46, Math.PI, 1);
+    for (const [n, x, z] of [['ballBucket', -23, -57], ['tennisBall', -18, -54], ['tennisBall', -21, -50], ['squeakyToy', -17, -58], ['bone', -24, -52], ['frisbeeBlue', -15, -51], ['chewRope', -19, -60], ['bone', -22, -61]]) putAt(n, x, z, undefined, 1);
+
+    // --- Picnic lawn toys: a few balls and frisbees beside each blanket
+    for (const [bx, bz] of [[70, 65], [95, 88]]) for (const [n, dx, dz] of [['tennisBall', 8.5, 1], ['frisbeeRed', -8.5, -2], ['tennisBall', 3, 7.5], ['frisbeeBlue', -4, -7.5], ['bone', 7, -6], ['squeakyToy', -7, 6.5], ['foodBowl', 9.5, 4], ['waterBowl', 9.5, 6.5]]) put(n, bx + dx, bz + dz, undefined, 1);
+
+    // --- Pond: low safety fence around the south shore, bench-and-lamp spots, ducks on the water
+    for (let a = 0.12 * Math.PI; a <= 0.88 * Math.PI; a += 2.1 / (POND.r + 3.6)) {
+      const x = POND.x + Math.cos(a) * (POND.r + 3.6), z = POND.z + Math.sin(a) * (POND.r + 3.6);
+      putAt('fence', x, z, runRot(-Math.sin(a), Math.cos(a)), 1);
+    }
+    for (const a of [0.3, 0.5, 0.7]) { const r = POND.r + 6; putAt('bench', POND.x + Math.cos(a * Math.PI) * r, POND.z + Math.sin(a * Math.PI) * r, faceRot(-Math.cos(a * Math.PI), -Math.sin(a * Math.PI)), 1); }
+    for (const a of [0.2, 0.4, 0.6, 0.8]) putAt('lampPost', POND.x + Math.cos(a * Math.PI) * (POND.r + 5), POND.z + Math.sin(a * Math.PI) * (POND.r + 5), 0, 1);
+    for (let i = 0; i < 6; i++) {
+      const a = randRange(0, Math.PI * 2), d = randRange(2, 10);
+      place('pondDuck', POND.x + Math.cos(a) * d, POND.z + Math.sin(a) * d, undefined, 1);
+    }
+
+    // --- Flower beds + sprinkler lines on the lawns (planted rows, not scattered)
+    for (let i = 0; i < 10; i++) putAt('bush', -60 + (i % 5) * 2.2, 8 + Math.floor(i / 5) * 2.2, undefined, 1);
+    for (let x = -20; x <= 20; x += 8) { putAt('sprinkler', x, 24, 0, 1); putAt('sprinkler', x, -24, 0, 1); }
+
+    // --- Dogs and owners roam freely
     scatter('greatDane', 10, ALL);
     scatter('dalmatian', 12, ALL);
     scatter('husky', 10, ALL);
@@ -212,46 +273,13 @@ export default {
     scatter('poodle', 14, ALL);
     scatter('poodleWhite', 12, ALL);
     scatter('dachshund', 22, ALL);
-    scatter('puppy', 16, ALL);
-    scatter('puppyBlack', 12, ALL);
-
-    // --- Owners
+    scatter('puppy', 22, ALL);
+    scatter('puppyBlack', 14, ALL);
     scatter('person', 12, ALL);
     scatter('personRed', 10, ALL);
     scatter('personGreen', 10, ALL);
     scatter('personDress', 10, ALL);
     scatter('personHat', 10, ALL);
-
-    // --- Pond ducks (on the water) and shore
-    for (let i = 0; i < 6; i++) {
-      const a = randRange(0, Math.PI * 2), d = randRange(2, 10);
-      place('pondDuck', POND.x + Math.cos(a) * d, POND.z + Math.sin(a) * d, undefined, 1);
-    }
-
-    // --- Starter cluster near spawn
-    scatter('tennisBall', 10, START, 1, 1, 12);
-    scatter('bone', 8, START, 1, 1, 12);
-    scatter('frisbeeRed', 5, START, 1, 1, 12);
-    scatter('foodBowl', 4, START, 1, 1, 12);
-    scatter('chewRope', 5, START, 1, 1, 12);
-    scatter('puppy', 3, START, 1, 1, 12);
-    scatter('squeakyToy', 4, START, 1, 1, 12);
-    STARTER();
-
-    // --- Small everywhere
-    scatter('tennisBall', 60, ALL, 1, 1, 12);
-    scatter('bone', 50, ALL, 1, 1, 12);
-    scatter('frisbeeRed', 24, ALL, 1, 1, 12);
-    scatter('frisbeeBlue', 24, ALL, 1, 1, 12);
-    scatter('chewRope', 24, ALL, 1, 1, 12);
-    scatter('squeakyToy', 24, ALL, 1, 1, 12);
-    scatter('foodBowl', 24, ALL, 1, 1, 12);
-    scatter('waterBowl', 20, ALL, 1, 1, 12);
-    scatter('ballBucket', 14, ALL, 1, 1, 12);
-    scatter('poopBag', 20, ALL, 1, 1, 12);
-    scatter('sprinkler', 16, ALL, 1, 1, 12);
-    scatter('bush', 30, ALL, 1, 1, 12);
-    scatter('hydrant', 24, ALL, 1, 1, 12);
     void rand;
   },
 };

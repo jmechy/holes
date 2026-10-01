@@ -292,6 +292,213 @@ const shop = (wall, awning, signCol, w = 4.4, h = 3.6) => {
   return p;
 };
 
+/** Mid-rise apartment block (faces +Z): recessed window grid, balconies with rails, entrance, roof clutter. */
+const apartment = (w, d, h, wall, o = {}) => {
+  const t = 0.22, cols = o.cols ?? Math.max(2, Math.round(w / 2.3)), floors = Math.max(2, Math.floor((h - 2.6) / 2.9));
+  const cw = w / cols, ww = cw * 0.52, wh = 1.35, trim = o.trim ?? C.dgray, acc = o.acc ?? C.teal;
+  const op = [], glass = [];
+  for (let f = 0; f < floors; f++) for (let c = 0; c < cols; c++) {
+    const x = -w / 2 + cw * (c + 0.5), y = 3.3 + f * 2.9;
+    op.push({ x, y, width: ww, height: wh });
+    glass.push(...nook(x, y, ww, wh));
+  }
+  const p = [
+    box(w, h, d - 2 * t + 0.1, wall, { y: h / 2, surface: 'stucco' }),
+    ...facadeWall(w, h, t, wall, [{ x: -w * 0.28, y: 1.2, width: 1.9, height: 1.9 }, ...op], { z: d / 2 - t / 2, surface: 'stucco' }),
+    ...facadeWall(w, h, t, wall, [], { z: -(d / 2 - t / 2), ry: PI, surface: 'stucco' }),
+    ...[...glass, ...nook(-w * 0.28, 1.2, 1.9, 1.9)].map((g) => g.translate(0, 0, d / 2)),
+    box(w + 0.1, 0.8, d + 0.1, C.dgray, { y: 0.4, surface: 'stone' }),
+    box(w + 0.3, 0.3, d + 0.3, C.dgray, { y: h + 0.15, surface: 'roof' }),
+    box(w * 0.3, 0.2, 1.1, acc, { y: 2.45, x: -w * 0.28, z: d / 2 + 0.5, surface: 'fabric' }),
+    box(0.9, 1.2, 0.08, C.dark, { y: 0.95, x: w * 0.3, z: d / 2 + 0.03, surface: 'metal' }),
+    ...roofTop(w * 0.9, d * 0.9, h + 0.3, { tank: o.tank, mast: o.mast ?? 2 }),
+  ];
+  // vertical stair-tower stripe + side window bands
+  p.push(box(0.5, h, 0.3, trim, { x: w / 2 - 0.1, y: h / 2, z: d / 2 + 0.1, surface: 'stone' }), box(0.5, h, 0.3, trim, { x: -w / 2 + 0.1, y: h / 2, z: d / 2 + 0.1, surface: 'stone' }));
+  for (let f = 0; f < floors; f++) {
+    const y = 3.3 + f * 2.9;
+    for (const sx of [-1, 1]) for (const k of [-1, 1]) p.push(box(0.05, wh, 0.9, C.dglass, { x: sx * (w / 2 + 0.02), y, z: k * d * 0.2, surface: 'glass' }));
+    if (o.balcony !== false && f > 0) for (let c = 0; c < cols; c++) {
+      const x = -w / 2 + cw * (c + 0.5);
+      p.push(
+        box(cw * 0.86, 0.1, 0.8, C.lgray, { x, y: y - 0.7, z: d / 2 + 0.4, surface: 'stone' }),
+        box(cw * 0.86, 0.5, 0.05, acc, { x, y: y - 0.4, z: d / 2 + 0.78, surface: 'metal' }),
+        box(cw * 0.5, 0.18, 0.2, C.white, { x: x + cw * 0.1, y: y - 0.52, z: d / 2 + 0.4, surface: 'fabric' }),
+      );
+    }
+  }
+  return p;
+};
+
+/** Slim 'pencil' shop building (faces +Z) with a tall stack of vertical neon signs: ground shopfront + upper windows. */
+const pencil = (wall, cols4, w = 3.4, h = 11) => {
+  const d = 4.2, t = 0.2, floors = Math.floor((h - 2) / 2.7);
+  const op = [{ x: 0, y: 1.5, width: w * 0.8, height: 1.7 }];
+  const gl = [];
+  for (let f = 0; f < floors; f++) for (const k of [-1, 1]) { const x = k * w * 0.24, y = 3.5 + f * 2.7; op.push({ x, y, width: w * 0.3, height: 1.1 }); gl.push(...nook(x, y, w * 0.3, 1.1)); }
+  const p = [
+    box(w, h, d - 2 * t + 0.1, wall, { y: h / 2, surface: 'stucco' }),
+    ...facadeWall(w, h, t, wall, op, { z: d / 2 - t / 2, surface: 'stucco' }),
+    ...facadeWall(w, h, t, wall, [], { z: -(d / 2 - t / 2), ry: PI, surface: 'stucco' }),
+    ...[...gl, ...nook(0, 1.5, w * 0.8, 1.7)].map((g) => g.translate(0, 0, d / 2)),
+    box(w + 0.2, 0.3, d + 0.2, C.dgray, { y: h + 0.15, surface: 'roof' }),
+    box(w + 0.1, 0.7, d + 0.1, C.dgray, { y: 0.35, surface: 'stone' }),
+    box(w * 0.9, 0.2, 0.9, cols4[0], { y: 2.6, z: d / 2 + 0.5, rx: 0.3, surface: 'fabric' }),
+    box(0.5, 0.36, 0.3, C.lgray, { y: h - 1.2, x: -w / 2 - 0.15, z: -0.4 }),
+    box(w * 0.6, 0.9, 0.6, C.lgray, { y: h + 0.75, x: -0.3, z: -0.8 }),
+  ];
+  // vertical blade signs on the facade: stacked emissive panels with white 'characters'
+  const sh = h - 3.2;
+  p.push(box(0.75, sh, 0.3, C.dark, { x: w / 2 - 0.05, y: 3.0 + sh / 2, z: d / 2 + 0.55, surface: 'metal' }));
+  for (let i = 0; i < 4; i++) {
+    const y = 3.0 + (sh / 4) * (i + 0.5);
+    p.push(box(0.6, sh / 4 - 0.14, 0.1, cols4[i % cols4.length], { emissive: 1.4, x: w / 2 - 0.05, y, z: d / 2 + 0.74, surface: 'paint' }),
+      box(0.36, 0.12, 0.04, C.white, { x: w / 2 - 0.05, y: y + 0.2, z: d / 2 + 0.8 }), box(0.36, 0.12, 0.04, C.white, { x: w / 2 - 0.05, y: y - 0.2, z: d / 2 + 0.8 }));
+  }
+  p.push(box(0.5, h * 0.35, 0.2, C.dark, { x: -w / 2 + 0.1, y: h * 0.62, z: d / 2 + 0.3, surface: 'metal' }), box(0.4, h * 0.35 - 0.1, 0.1, cols4[1], { emissive: 1.3, x: -w / 2 + 0.1, y: h * 0.62, z: d / 2 + 0.43, surface: 'paint' }));
+  return p;
+};
+
+/** Convenience store (faces +Z): glass storefront, striped brand bands, lit sign, door, posters, roof AC. */
+const konbini = (stripe, stripe2, w = 8, d = 5.5) => {
+  const h = 3.8, t = 0.2;
+  const op = [{ x: -w * 0.12, y: 1.55, width: w * 0.62, height: 1.9 }];
+  const p = [
+    box(w, h, d - 2 * t + 0.1, C.white, { y: h / 2, surface: 'stucco' }),
+    ...facadeWall(w, h, t, C.white, op, { z: d / 2 - t / 2, surface: 'stucco' }),
+    ...facadeWall(w, h, t, C.white, [], { z: -(d / 2 - t / 2), ry: PI, surface: 'stucco' }),
+    box(w * 0.62, 1.9, 0.04, C.glass, { x: -w * 0.12, y: 1.55, z: d / 2 - 0.14, surface: 'glass' }),
+    ...[-0.3, -0.12, 0.06].map((k) => box(0.05, 1.9, 0.06, C.dark, { x: w * k, y: 1.55, z: d / 2 - 0.1, surface: 'metal' })),
+    box(w + 0.3, 0.3, d + 0.3, C.dgray, { y: h + 0.15, surface: 'roof' }),
+    box(w + 0.05, 0.7, d + 0.05, C.dgray, { y: 0.35, surface: 'stone' }),
+    box(w + 0.1, 0.32, 0.16, stripe, { y: h - 0.3, z: d / 2 + 0.06, surface: 'paint' }),
+    box(w + 0.1, 0.18, 0.16, stripe2, { y: h - 0.62, z: d / 2 + 0.06, surface: 'paint' }),
+    box(w * 0.5, 0.8, 0.14, C.dark, { y: h + 0.7, z: d / 2 - 0.5, surface: 'metal' }),
+    box(w * 0.46, 0.64, 0.08, stripe, { emissive: 1.2, y: h + 0.7, z: d / 2 - 0.42, surface: 'paint' }),
+    ...[-1.5, -0.5, 0.5, 1.5].map((k) => box(w * 0.07, 0.3, 0.04, C.white, { y: h + 0.7, x: k * w * 0.1, z: d / 2 - 0.37 })),
+    box(1.2, 1.9, 0.08, C.dglass, { x: w * 0.36, y: 1.5, z: d / 2 - 0.1, surface: 'glass' }),
+    box(1.3, 0.1, 0.9, stripe2, { y: 2.65, x: w * 0.36, z: d / 2 + 0.4, rx: 0.2, surface: 'fabric' }),
+    box(0.5, 0.36, 0.3, C.lgray, { y: h + 0.5, x: -w * 0.3, z: -0.4 }),
+    box(0.5, 0.36, 0.3, C.lgray, { y: h + 0.5, x: -w * 0.1, z: -0.4 }),
+    ...banner(w / 2 + 0.28, 2.2, d / 2 - 0.5, 1.8, stripe),
+  ];
+  for (let i = 0; i < 4; i++) p.push(box(0.75, 0.55, 0.04, i % 2 ? C.hpink : C.yellow, { x: -w * 0.34 + i * 0.95, y: 2.55, z: d / 2 + 0.03, surface: 'paint' }));
+  return p;
+};
+
+/** Street light: pole, curved arm, warm lamp head. */
+const streetLight = () => [
+  cyl(0.18, 0.24, 0.3, C.dgray, { y: 0.15, segments: 8, surface: 'metal' }),
+  cyl(0.07, 0.1, 5.2, C.dgray, { y: 2.7, segments: 8, surface: 'metal' }),
+  box(0.8, 0.07, 0.07, C.dgray, { y: 5.25, x: 0.35, surface: 'metal' }),
+  box(0.55, 0.12, 0.26, C.lgray, { y: 5.2, x: 0.8, surface: 'metal' }),
+  box(0.45, 0.04, 0.2, C.lamp, { emissive: 1.3, y: 5.12, x: 0.8 }),
+];
+/** Wooden/concrete utility pole with cross-arms, transformer can and insulators. */
+const utilityPole = () => [
+  cyl(0.11, 0.16, 7.6, '#8b8478', { y: 3.8, segments: 8, surface: 'stone' }),
+  box(2.0, 0.1, 0.1, C.dbrown, { y: 7.1, surface: 'wood' }), box(1.5, 0.1, 0.1, C.dbrown, { y: 6.5, surface: 'wood' }),
+  cyl(0.3, 0.3, 0.8, C.dgray, { y: 5.7, x: 0.35, segments: 8, surface: 'metal' }),
+  ...[-0.9, -0.3, 0.3, 0.9].map((x) => cyl(0.04, 0.04, 0.16, C.white, { y: 7.22, x, segments: 5 })),
+  box(0.4, 0.5, 0.05, C.yellow, { y: 3.2, z: 0.15, surface: 'paint' }),
+];
+
+/** Railway station hall (faces +Z): long low concourse with glass wall, canopy, big sign and clock. */
+const stationHall = (len = 34, d = 7) => {
+  const h = 6.5, t = 0.25, nb = 9;
+  const op = [], gl = [];
+  for (let i = 0; i < nb; i++) {
+    const x = -len / 2 + (len / nb) * (i + 0.5);
+    op.push({ x, y: 2.4, width: len / nb * 0.7, height: 2.6 });
+    gl.push(box(len / nb * 0.7, 2.6, 0.04, C.dglass, { x, y: 2.4, z: -0.16, surface: 'glass' }), box(0.08, 2.6, 0.08, C.white, { x: x - len / nb * 0.35, y: 2.4, z: -0.1 }));
+  }
+  const p = [
+    box(len, h, d - 2 * t + 0.1, '#e4dfd2', { y: h / 2, surface: 'stucco' }),
+    ...facadeWall(len, h, t, '#e4dfd2', op, { z: d / 2 - t / 2, surface: 'stucco' }),
+    ...facadeWall(len, h, t, '#e4dfd2', [], { z: -(d / 2 - t / 2), ry: PI, surface: 'stucco' }),
+    ...gl.map((g) => g.translate(0, 0, d / 2)),
+    box(len + 1, 0.5, d + 1.4, C.dgray, { y: h + 0.25, surface: 'roof' }),
+    box(len - 2, 0.3, 2.6, C.roofgray, { y: 4.6, z: d / 2 + 1.3, rx: 0.12, surface: 'roof' }),
+    box(len * 0.5, 1.4, 0.3, C.dark, { y: h + 1.2, z: d / 2 - 0.4, surface: 'metal' }),
+    box(len * 0.46, 1.1, 0.1, C.blue, { emissive: 1.2, y: h + 1.2, z: d / 2 - 0.22, surface: 'paint' }),
+    cyl(0.7, 0.7, 0.2, C.white, { y: h + 3.0, rx: PI / 2, z: d / 2 - 1.5, segments: 16 }),
+    box(0.06, 0.55, 0.05, C.dark, { y: h + 3.1, z: d / 2 - 1.38 }),
+    box(len * 0.8, 0.5, 0.4, C.lgray, { y: h + 0.9, x: 0, z: -1.2 }),
+  ];
+  for (let i = 0; i < 7; i++) p.push(box(0.4, 0.4, 0.04, [C.neonB, C.neonY, C.neonG][i % 3], { emissive: 1.1, x: -len * 0.2 + i * 0.6, y: h + 1.2, z: d / 2 - 0.15 }));
+  return p;
+};
+
+/** Fence segment (chain-link style) 1.6 long, along X. */
+const fenceSeg = (col = C.dgray) => [
+  box(0.08, 1.25, 0.08, col, { x: -0.76, y: 0.62, surface: 'metal' }), box(0.08, 1.25, 0.08, col, { x: 0.76, y: 0.62, surface: 'metal' }),
+  box(1.6, 0.06, 0.06, col, { y: 1.22, surface: 'metal' }), box(1.6, 0.05, 0.05, col, { y: 0.1, surface: 'metal' }),
+  box(1.5, 1.0, 0.025, '#b9c0c8', { y: 0.65, surface: 'metal', textureStrength: 0.8 }),
+];
+/** Trimmed hedge 1.6 long, along X. */
+const hedge = (col = '#2f7a3a') => [
+  rbox(1.6, 0.8, 0.7, col, { y: 0.4, segments: 2, bevel: 0.2, surface: 'foliage', textureStrength: 0.8 }),
+  sphere(0.3, '#3b9a47', { y: 0.82, x: -0.4, segments: 6, rings: 4, flat: false, surface: 'foliage' }),
+  sphere(0.26, '#3b9a47', { y: 0.84, x: 0.35, segments: 6, rings: 4, flat: false, surface: 'foliage' }),
+];
+const planter = () => [
+  rbox(1.3, 0.5, 0.6, '#9a8f7e', { y: 0.25, segments: 1, bevel: 0.05, surface: 'stone' }),
+  sphere(0.38, '#3b9a47', { y: 0.72, x: -0.3, segments: 7, rings: 5, flat: false, surface: 'foliage' }),
+  sphere(0.34, '#4cb056', { y: 0.7, x: 0.3, segments: 7, rings: 5, flat: false, surface: 'foliage' }),
+  ...[[-0.35, 0.9, C.hpink], [0.0, 0.95, C.yellow], [0.4, 0.88, C.white]].map(([x, y, c]) => sphere(0.09, c, { x, y, z: 0.1, segments: 5, rings: 3, flat: false })),
+];
+const flowerPot = (c = C.hpink) => [
+  cyl(0.26, 0.18, 0.4, '#b5674a', { y: 0.2, segments: 8, surface: 'stone' }),
+  sphere(0.3, '#3f9a4a', { y: 0.55, segments: 7, rings: 5, flat: false, surface: 'foliage' }),
+  ...[[0.1, 0.8], [-0.12, 0.74], [0.0, 0.88]].map(([x, y], i) => sphere(0.09, i ? C.yellow : c, { x, y, z: x * 0.5, segments: 5, rings: 3, flat: false })),
+];
+const bollard = () => [
+  cyl(0.11, 0.13, 0.75, C.dgray, { y: 0.38, segments: 8, surface: 'metal' }),
+  cyl(0.115, 0.115, 0.12, C.yellow, { y: 0.66, segments: 8, surface: 'paint' }),
+  sphere(0.11, C.dgray, { y: 0.77, segments: 6, rings: 3, flat: false, surface: 'metal' }),
+];
+/** Sorted-waste bins: blue + yellow compartments. */
+const trashBin = () => [
+  rbox(0.5, 0.95, 0.5, '#3b6fb5', { y: 0.48, x: -0.28, segments: 1, bevel: 0.05, surface: 'paint' }),
+  rbox(0.5, 0.95, 0.5, '#e0b92a', { y: 0.48, x: 0.28, segments: 1, bevel: 0.05, surface: 'paint' }),
+  box(0.3, 0.08, 0.04, C.dark, { y: 0.8, x: -0.28, z: 0.26 }), box(0.3, 0.08, 0.04, C.dark, { y: 0.8, x: 0.28, z: 0.26 }),
+  box(1.12, 0.06, 0.56, C.dgray, { y: 0.98, surface: 'metal' }),
+];
+const parkBench = () => [
+  box(1.6, 0.08, 0.5, C.wood, { y: 0.48, surface: 'wood' }), box(1.6, 0.5, 0.07, C.wood, { y: 0.8, z: -0.24, rx: -0.12, surface: 'wood' }),
+  box(0.08, 0.48, 0.5, C.dgray, { y: 0.24, x: -0.7, surface: 'metal' }), box(0.08, 0.48, 0.5, C.dgray, { y: 0.24, x: 0.7, surface: 'metal' }),
+  box(0.07, 0.3, 0.5, C.dgray, { y: 0.62, x: -0.78, surface: 'metal' }), box(0.07, 0.3, 0.5, C.dgray, { y: 0.62, x: 0.78, surface: 'metal' }),
+];
+const postBox = () => [
+  cyl(0.28, 0.3, 1.0, C.red, { y: 0.55, segments: 10, surface: 'paint' }),
+  sphere(0.28, C.red, { y: 1.05, sy: 0.5, segments: 10, rings: 5, flat: false, surface: 'paint' }),
+  box(0.3, 0.05, 0.05, C.black, { y: 0.82, z: 0.29 }), cyl(0.31, 0.31, 0.06, C.dgray, { y: 0.1, segments: 10, surface: 'metal' }),
+];
+const bikeRack = () => [
+  ...[-0.6, -0.2, 0.2, 0.6].map((x) => torus(0.28, 0.03, C.lgray, { x, y: 0.3, z: 0, segments: 8, radial: 4, surface: 'metal' })),
+  box(1.5, 0.05, 0.05, C.dgray, { y: 0.03, z: 0.2, surface: 'metal' }), box(1.5, 0.05, 0.05, C.dgray, { y: 0.03, z: -0.2, surface: 'metal' }),
+];
+/** Cafe table with two chairs and a parasol. */
+const cafeSet = (col = C.red) => [
+  cyl(0.5, 0.5, 0.05, C.white, { y: 0.75, segments: 12, surface: 'metal' }), cyl(0.04, 0.06, 0.75, C.dgray, { y: 0.38, segments: 6, surface: 'metal' }),
+  ...[-1, 1].flatMap((s) => [box(0.38, 0.05, 0.38, C.wood, { y: 0.45, z: s * 0.7, surface: 'wood' }), box(0.38, 0.4, 0.05, C.wood, { y: 0.7, z: s * 0.88, surface: 'wood' }),
+    ...[[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([a, b]) => box(0.04, 0.45, 0.04, C.dgray, { y: 0.22, x: a * 0.16, z: s * 0.7 + b * 0.16, surface: 'metal' }))]),
+  cyl(0.02, 0.02, 1.9, C.dgray, { y: 0.95, segments: 4 }), cone(1.0, 0.35, col, { y: 1.95, segments: 8, surface: 'fabric' }),
+];
+const aFrame = () => [
+  box(0.5, 0.8, 0.04, C.dbrown, { y: 0.42, z: 0.12, rx: -0.2, surface: 'wood' }), box(0.5, 0.8, 0.04, C.dbrown, { y: 0.42, z: -0.12, rx: 0.2, surface: 'wood' }),
+  box(0.42, 0.55, 0.02, C.cream, { y: 0.5, z: 0.15, rx: -0.2, surface: 'paint' }), box(0.3, 0.08, 0.02, C.hpink, { y: 0.62, z: 0.17, rx: -0.2 }),
+];
+const signalPost = () => [
+  cyl(0.07, 0.09, 4.2, C.dgray, { y: 2.1, segments: 6, surface: 'metal' }), box(0.4, 1.0, 0.25, C.dark, { y: 4.1, surface: 'metal' }),
+  sphere(0.11, C.neonG, { emissive: 1.5, y: 4.4, z: 0.14, segments: 6, rings: 4, flat: false }), sphere(0.11, C.neonR, { emissive: 1.2, y: 4.05, z: 0.14, segments: 6, rings: 4, flat: false }),
+];
+const trafficLight = () => [
+  cyl(0.07, 0.09, 4.0, C.dgray, { y: 2.0, segments: 6, surface: 'metal' }), box(0.12, 0.12, 2.0, C.dgray, { y: 3.9, x: 0.0, z: 1.0, surface: 'metal' }),
+  box(0.3, 0.9, 0.28, C.dark, { y: 3.8, z: 1.9, surface: 'metal' }),
+  sphere(0.1, C.neonR, { emissive: 1.3, y: 4.05, z: 2.05, segments: 6, rings: 4, flat: false }), sphere(0.1, C.neonG, { emissive: 0.6, y: 3.55, z: 2.05, segments: 6, rings: 4, flat: false }),
+];
+
 export function buildProtos() {
   const P = {};
   const add = (name, parts, opts) => (P[name] = applyModelFinishes(fillSurface(makeProto(name, parts.flat(), opts), FALLBACK[name] ?? DEFAULT_FALLBACK), 'urban'));
@@ -605,7 +812,7 @@ export function buildProtos() {
   add('bulletTrain', trainCar(0), { value: 9 });
   add('bulletNose', trainNose(0), { value: 12 });
   // A whole moving train set (nose + 2 cars) as ONE object so it can run a route as a unit. +X is forward.
-  add('bulletSet', [...trainNose(0), ...trainCar(-12.5), ...trainCar(-25)], { value: 40, radius: 11 });
+  add('bulletSet', [...trainNose(0), ...trainCar(-12.5), ...trainCar(-25)], { value: 10, radius: 11 });
 
   add('pagoda', (() => {
     const p = [
@@ -663,7 +870,7 @@ export function buildProtos() {
       ...banner(-W / 2 - 0.4, 8.0, 0.6, 5.0, C.neonB).map((g) => g.rotateY(0)),
     );
     return p;
-  })(), { value: 8 });
+  })(), { value: 4.5 });
 
   add('skyA', [
     ...tower(6.5, 6.5, 19, '#9db7cf', C.dglass, { mull: '#c9d8e6' }),
@@ -673,7 +880,7 @@ export function buildProtos() {
     box(2.4, 0.9, 0.3, C.dark, { surface: 'paint', y: 1.3, z: 3.5 }),
     box(2.0, 0.7, 0.06, C.neonB, { emissive: 1.3, surface: 'paint', y: 1.3, z: 3.66 }),
     ...banner(3.6, 8.5, 3.2, 3.2, C.neonP),
-  ], { value: 10 });
+  ], { value: 6 });
   add('skyB', [
     ...tower(7.5, 5.5, 15.5, '#d9d2c3', C.dglass, { mull: '#efe9dc', fh: 1.7 }),
     box(7.9, 0.4, 5.9, C.dgray, { surface: 'stone', y: 15.5 }),
@@ -683,7 +890,7 @@ export function buildProtos() {
     box(3.2, 0.2, 1.6, C.dgray, { surface: 'stone', y: 2.6, z: 3.4 }),
     box(3.0, 0.5, 0.06, C.neonG, { emissive: 1.3, surface: 'paint', y: 2.2, z: 4.0 }),
     ...banner(-3.9, 7.0, 2.6, 3.4, C.neonR),
-  ], { value: 9 });
+  ], { value: 5.5 });
   add('skyC', [
     ...tower(5.5, 5.5, 26, '#b8a7d6', C.dglass, { mull: '#dcd2ee', fh: 1.7 }),
     box(5.9, 0.4, 5.9, C.dgray, { surface: 'stone', y: 24 }),
@@ -692,7 +899,7 @@ export function buildProtos() {
     box(5.7, 0.6, 5.7, C.neonP, { emissive: 1.3, surface: 'paint', y: 25.2 }),
     ...[1, -1].map((s) => box(0.5, 6, 0.2, C.neonB, { emissive: 1.3, surface: 'paint', x: s * 2.6, y: 15, z: 2.86 })),
     box(2.2, 0.9, 0.3, C.dark, { surface: 'paint', y: 1.3, z: 2.95 }), box(1.8, 0.7, 0.06, C.neonY, { emissive: 1.3, surface: 'paint', y: 1.3, z: 3.11 }),
-  ], { value: 11 });
+  ], { value: 6.5 });
 
   add('tokyoTower', (() => {
     const hw = (y) => 1.3 + 5.4 * Math.pow(Math.max(0, 1 - y / 27), 1.7);
@@ -740,7 +947,7 @@ export function buildProtos() {
       sphere(0.2, C.red, { y: 44.3, segments: 8, rings: 5, flat: false }),
     );
     return p;
-  })(), { value: 100, radius: 8 });
+  })(), { value: 60, radius: 8 });
 
   add('skytree', (() => {
     const p = [];
@@ -775,7 +982,54 @@ export function buildProtos() {
     for (const y of [16, 20, 24]) p.push(torus(2.4 - (y - 16) * 0.02, 0.09, C.lgray, { surface: 'metal', y, rx: PI / 2, radial: 4, segments: 14 }));
     for (const y of [32, 36, 40]) p.push(torus(1.8 - (y - 32) * 0.03, 0.09, C.lgray, { surface: 'metal', y, rx: PI / 2, radial: 4, segments: 14 }));
     return p;
-  })(), { value: 80, radius: 7 });
+  })(), { value: 50, radius: 7 });
+
+  // ---------- dense-city additions: mid-rise apartments, pencil shops with vertical signs, konbini, offices
+  const office = (w, d, h, body, glass, mull, sign, o = {}) => [
+    ...tower(w, d, h, body, glass, { mull, fh: o.fh ?? 1.7 }),
+    box(w + 0.4, 0.4, d + 0.4, C.dgray, { surface: 'stone', y: h + 0.2 }),
+    ...roofTop(w, d, h + 0.4, { tank: o.tank, mast: o.mast ?? 3 }),
+    box(Math.min(3.2, w * 0.5), 0.9, 0.3, C.dark, { surface: 'paint', y: 1.3, z: d / 2 + 0.35 }),
+    box(Math.min(2.8, w * 0.44), 0.7, 0.06, sign, { emissive: 1.3, surface: 'paint', y: 1.3, z: d / 2 + 0.52 }),
+    ...banner(-w / 2 - 0.2, h * 0.5, d / 2 - 0.2, h * 0.45, o.blade ?? C.neonP),
+    box(w + 0.1, 0.6, d + 0.1, C.dgray, { surface: 'stone', y: 0.3 }),
+  ];
+  add('aptA', apartment(7, 6, 14, '#e6d9bf', { acc: C.teal, tank: true }), { value: 2, radius: 3.3 });
+  add('aptB', apartment(6.4, 6, 17, '#c6d5e6', { acc: C.hpink, mast: 3 }), { value: 2.3, radius: 3.2 });
+  add('aptC', apartment(8, 6.4, 12, '#e8c4b0', { acc: C.blue, tank: true }), { value: 2.2, radius: 3.8 });
+  add('aptD', apartment(5.6, 5.6, 20, '#d4cfe6', { acc: C.orange, mast: 4 }), { value: 2.5, radius: 3 });
+  add('pencilA', pencil('#e8d6c0', [C.neonP, C.neonB, C.neonY, C.neonG]), { value: 1.5, radius: 1.8 });
+  add('pencilB', pencil('#d6e0c8', [C.neonB, C.neonR, C.neonP, C.neonY], 3.4, 13), { value: 1.7, radius: 1.8 });
+  add('pencilC', pencil('#c8d4e4', [C.neonY, C.neonP, C.neonG, C.neonB], 3.6, 10), { value: 1.4, radius: 1.9 });
+  add('pencilD', pencil('#ecd0d6', [C.neonG, C.neonR, C.neonB, C.neonP], 3.2, 14), { value: 1.7, radius: 1.7 });
+  add('konbiniA', konbini(C.green, C.orange), { value: 1.4, radius: 3.6 });
+  add('konbiniB', konbini(C.blue, C.red), { value: 1.4, radius: 3.6 });
+  add('konbiniC', konbini(C.hpink, C.yellow, 7, 5.2), { value: 1.3, radius: 3.3 });
+  add('officeA', office(7, 6, 19, '#a9bfd4', C.dglass, '#d4e0ec', C.neonB, { tank: true }), { value: 3, radius: 3.6 });
+  add('officeB', office(8, 6.5, 15, '#d8cfc0', C.dglass, '#efe9dc', C.neonY, { blade: C.neonR }), { value: 2.8, radius: 4 });
+  add('officeC', office(6, 6, 25, '#b8c2cf', C.dglass, '#dde5ee', C.neonG, { mast: 5, blade: C.neonB }), { value: 3.4, radius: 3.2 });
+  add('officeD', office(9, 7, 11, '#c9d3c4', C.dglass, '#e6ede2', C.neonP, { tank: true, fh: 1.8 }), { value: 2.5, radius: 4.5 });
+  add('stationHall', stationHall(), { value: 14, radius: 5.5 });
+
+  // ---------- orderly street furniture
+  add('streetLight', streetLight(), { value: 0.3 });
+  add('utilityPole', utilityPole(), { value: 0.5 });
+  add('bollard', bollard(), { value: 0.15 });
+  add('planter', planter(), { value: 0.3 });
+  add('hedge', hedge(), { value: 0.25 });
+  add('hedgeDark', hedge('#26683a'), { value: 0.25 });
+  add('fenceSeg', fenceSeg(), { value: 0.2, radius: 0.85 });
+  add('trashBin', trashBin(), { value: 0.25 });
+  add('parkBench', parkBench(), { value: 0.3, radius: 0.85 });
+  add('postBox', postBox(), { value: 0.2 });
+  add('bikeRack', bikeRack(), { value: 0.2, radius: 0.85 });
+  add('cafeSet', cafeSet(C.red), { value: 0.4, radius: 1.0 });
+  add('cafeSetB', cafeSet(C.blue), { value: 0.4, radius: 1.0 });
+  add('flowerPot', flowerPot(C.hpink), { value: 0.15 });
+  add('flowerPotB', flowerPot(C.orange), { value: 0.15 });
+  add('aFrame', aFrame(), { value: 0.12 });
+  add('signalPost', signalPost(), { value: 0.3 });
+  add('trafficLight', trafficLight(), { value: 0.35 });
 
   return P;
 }

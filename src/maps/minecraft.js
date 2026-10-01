@@ -150,14 +150,64 @@ export default {
     const QUARRY = [-40, 30, -112, -65];
     const START = [-28, 28, -28, 28];
 
-    // Dense ring of tiny starters around spawn (6-24 units out)
-    const ring = (name, n) => {
-      for (let i = 0; i < n; i++) for (let t = 0; t < 12; t++) {
-        const a = rand() * Math.PI * 2, d = randRange(6, 24);
-        if (put(name, Math.cos(a) * d, Math.sin(a) * d, undefined, 1)) break;
+    const TIGHT = { move: null, tight: true };
+    const SMALL = ['flowerRed', 'flowerYellow', 'flowerBlue', 'mushroomRed', 'sapling', 'grassBlock'];
+    // fence run from (x0,z0) to (x1,z1): equal steps of ~4 so the run is gap-free; placed straight through ctx.place
+    // (no path check: a fence may touch a dirt path) and every rejected segment is reported
+    const fenceLine = (x0, z0, x1, z1) => {
+      const len = Math.hypot(x1 - x0, z1 - z0), n = Math.ceil(len / 4), yaw = Math.atan2(-(z1 - z0), x1 - x0);
+      for (let i = 0; i < n; i++) {
+        const t = (i + 0.5) / n;
+        if (!ctx.place('fenceRow', x0 + (x1 - x0) * t, z0 + (z1 - z0) * t, yaw, 1, TIGHT)) console.warn('fence segment rejected at', x0 + (x1 - x0) * t, z0 + (z1 - z0) * t);
       }
     };
-    const STARTER = () => { ring('flowerRed', 8); ring('flowerYellow', 8); ring('flowerBlue', 6); ring('mushroomRed', 6); ring('grassBlock', 8); ring('dirtBlock', 6); ring('torch', 6); ring('sapling', 4); ring('chicken', 6); };
+    const fenceRect = (cx, cz, hw, hd) => {
+      fenceLine(cx - hw, cz - hd, cx + hw, cz - hd); fenceLine(cx - hw, cz + hd, cx + hw, cz + hd);
+      fenceLine(cx - hw, cz - hd, cx - hw, cz + hd); fenceLine(cx + hw, cz - hd, cx + hw, cz + hd);
+    };
+    // square fenced pen (half-size hs), fully enclosed (animals wander inside it)
+    const pen = (cx, cz, hs, gate, animals, rect) => {
+      const hw = rect ? rect[0] : hs, hd = rect ? rect[1] : hs;
+      fenceRect(cx, cz, hw, hd);
+      for (const [n, k] of animals) for (let i = 0; i < k; i++) for (let t = 0; t < 10; t++) {
+        if (place(n, cx + randRange(-hw + 1.8, hw - 1.8), cz + randRange(-hd + 1.8, hd - 1.8), undefined, 1, { move: { type: 'walk', speed: 1.1, range: 2.2 } })) break;
+      }
+    };
+    // grove of mixed voxel trees with an understory of flowers / mushrooms / saplings around the trunks
+    const grove = (cx, cz, rx, rz, n, kinds, under = 3) => {
+      for (let i = 0; i < Math.round(n * 1.05); i++) for (let t = 0; t < 25; t++) {
+        const a = rand() * Math.PI * 2, d = Math.sqrt(rand());
+        const x = cx + Math.cos(a) * d * rx, z = cz + Math.sin(a) * d * rz, k = kinds[Math.floor(rand() * kinds.length)];
+        if (!put(k, x, z, undefined, 0.9 + rand() * 0.25)) continue;
+        for (let u = 0; u < Math.min(under, 2); u++) for (let q = 0; q < 6; q++) {
+          const aa = rand() * Math.PI * 2, dd = randRange(1.9, 3.4);
+          const nm = k === 'spruceTree' ? ['mushroomRed', 'mushroomBrown', 'sapling'] : k === 'cherryTree' ? ['flowerRed', 'flowerBlue', 'flowerYellow'] : ['flowerRed', 'flowerYellow', 'flowerBlue', 'mushroomBrown', 'mushroomRed', 'sapling'];
+          if (put(nm[Math.floor(rand() * nm.length)], x + Math.cos(aa) * dd, z + Math.sin(aa) * dd, undefined, 1)) break;
+        }
+        break;
+      }
+    };
+    // torches in a line along a path (alternating sides)
+    const torchLine = (x0, z0, x1, z1, step, off) => {
+      const len = Math.hypot(x1 - x0, z1 - z0), nx = -(z1 - z0) / len, nz = (x1 - x0) / len;
+      for (let t = 0, i = 0; t <= len; t += step, i++) { const s = i % 2 ? 1 : -1; put('torch', x0 + (x1 - x0) * t / len + nx * off * s, z0 + (z1 - z0) * t / len + nz * off * s, 0, 1); }
+    };
+
+    // --- Fences: farm field, animal pens, garden plots (placed FIRST so nothing else can block a fence segment)
+    fenceRect(-78, 17, 14.4, 14.4);
+    pen(-55, 14, 4, 'n', [['cow', 2], ['sheep', 2]]);
+    pen(-105, 5, 4, 's', [['pig', 3], ['chicken', 2]]);
+    pen(-108, -15, 4, 'e', [['sheep', 3]]);
+    pen(48, 100, 5, 's', [['cow', 2], ['pig', 2]]);
+    pen(25, 90, 4, 'n', [['sheepPink', 2], ['sheep', 2]]);
+    pen(-14, 15, 4, 's', [['chicken', 4]]);                  // chicken run beside spawn
+    pen(14, -14, 4, 'w', [], null);                          // flower garden beside spawn
+    for (const gx of [-1, 1]) for (const gz of [-1, 1]) {
+      put(gz < 0 ? 'flowerRed' : 'flowerYellow', 14 + gx * 1.5, -14 + gz * 1.5, 0, 1);
+      put('flowerBlue', 14 + gx * 1.5, -14, 0, 1);
+    }
+    pen(-30, -50, 3, 'e', [], null);                         // little crop plots
+    for (let i = 0; i < 4; i++) place('pumpkin', -30, -52 + i * 1.8, 0, 1);
 
     // --- Huge landmarks
     place('castle', 72, -78, 0, 1);
@@ -178,62 +228,84 @@ export default {
     // minecarts parked on the mine rails
     for (const [mx, mz] of MINES) for (const dz of [10, 17, 24]) place('minecart', mx, mz + dz, Math.PI / 2, 1);
     scatter('house', 3, VILLAGE);
-    scatter('hut', 14, ALL);
+    scatter('hut', 7, ALL);
     scatter('hut', 6, VILLAGE);
     scatter('lavaPool', 5, QUARRY);
-    scatter('lavaPool', 3, ALL);
+    scatter('lavaPool', 1, ALL);
     scatter('well', 5, VILLAGE);
-    scatter('well', 3, ALL);
+    scatter('well', 1, ALL);
 
-    // --- Trees (big first)
-    scatter('oakTreeBig', 8, FOREST);
-    scatter('oakTreeBig', 4, ALL);
-    scatter('oakTree', 16, FOREST);
-    scatter('birchTree', 10, FOREST);
-    scatter('spruceTree', 10, [-112, -40, -112, -60]);
-    scatter('cherryTree', 6, [-20, 60, 70, 112]);
-    scatter('oakTree', 12, ALL);
-    scatter('birchTree', 10, ALL);
-    scatter('cherryTree', 4, ALL);
-    scatter('spruceTree', 4, ALL);
+    // --- Torches line the dirt paths
+    torchLine(-112, 0, 112, 0, 8, 3.2);
+    torchLine(0, -112, 0, 112, 8, 3.2);
+    torchLine(-112, 0, 112, 0, 8, 3.2 + 0);
+    torchLine(60, 25, 60, 85, 7, 3.2);
+    torchLine(30, 30, 90, 30, 7, 3.2);
+    torchLine(-45, -58, -45, 0, 7, 3.2);
+    torchLine(-85, -30, -5, -30, 8, 3.2);
+    torchLine(72, -66, 72, -30, 7, 4);
+    // neat orchard rows beside the main path
+    for (let x = 14; x <= 50; x += 6) { put('sapling', x, 8, 0, 1); put('sapling', x, -8, 0, 1); }
+    for (let x = -50; x <= -14; x += 6) { put('sapling', x, 8, 0, 1); put('sapling', x, -8, 0, 1); }
+
+    // --- Forests and groves (voxel trees, with flowers / mushrooms / saplings underneath)
+    const MIX = ['oakTree', 'oakTree', 'birchTree', 'spruceTree', 'cherryTree'];
+    grove(-78, -62, 34, 40, 34, ['oakTree', 'oakTree', 'birchTree', 'spruceTree', 'oakTreeBig'], 3);
+    grove(-85, -95, 28, 14, 14, ['spruceTree', 'spruceTree', 'birchTree'], 3);
+    grove(30, -62, 18, 24, 22, MIX, 3);          // NE meadow forest
+    grove(18, -105, 16, 8, 8, ['oakTree', 'birchTree'], 2);
+    grove(-25, 28, 14, 14, 9, ['birchTree', 'oakTree', 'cherryTree'], 3);   // west of spawn
+    grove(-22, 58, 12, 14, 9, ['oakTree', 'birchTree', 'cherryTree'], 3);
+    grove(40, -32, 12, 10, 7, ['oakTree', 'birchTree', 'spruceTree'], 3);
+    grove(26, 22, 11, 11, 6, ['oakTree', 'cherryTree'], 3);
+    grove(12, 80, 18, 22, 22, MIX, 3);           // SE-centre
+    grove(-30, 95, 24, 16, 18, ['oakTree', 'oakTreeBig', 'birchTree', 'cherryTree'], 3);
+    grove(-100, 75, 14, 30, 14, ['oakTree', 'spruceTree', 'birchTree'], 3);
+    grove(-85, 105, 24, 8, 8, ['oakTree', 'cherryTree'], 3);
+    grove(-20, -35, 14, 12, 9, ['oakTree', 'birchTree', 'spruceTree'], 3);
+    grove(105, -62, 10, 16, 7, ['oakTree', 'birchTree'], 2);
+    grove(105, 60, 8, 12, 6, ['birchTree', 'cherryTree'], 2);
+    grove(112, 112, 8, 8, 3, ['oakTree'], 2);
+    scatter('oakTreeBig', 2, ALL);
+    scatter('cherryTree', 4, [-20, 60, 70, 112]);
 
     // --- Village life
     scatter('villager', 14, VILLAGE);
-    scatter('villager', 6, ALL);
+    scatter('villager', 2, ALL);
     scatter('craftingTable', 7, VILLAGE);
     scatter('chest', 8, VILLAGE);
     scatter('furnace', 6, VILLAGE);
-    scatter('fenceRow', 10, VILLAGE);
+    for (let x = 42; x <= 106; x += 8) { place('fenceRow', x, 62.3, 0, 1, TIGHT); }
+    for (const hx of [50, 66, 82, 98]) { put('flowerRed', hx - 3.5, 52, 0, 1); put('flowerYellow', hx + 3.5, 52, 0, 1); put('torch', hx - 3.5, 58, 0, 1); }
 
     // --- Farm
-    scatter('fenceRow', 8, FARM);
-    scatter('hayBale', 16, FARM);
-    scatter('pumpkin', 16, FARM);
-    scatter('cow', 16, FARM);
-    scatter('pig', 14, FARM);
-    scatter('sheep', 14, FARM);
-    scatter('chicken', 20, FARM);
+    scatter('hayBale', 12, FARM);
+    scatter('pumpkin', 10, FARM);
+    scatter('cow', 10, FARM);
+    scatter('pig', 8, FARM);
+    scatter('sheep', 8, FARM);
+    scatter('chicken', 10, FARM);
 
     // --- Mobs across the world
-    scatter('cow', 14, ALL);
-    scatter('pig', 16, ALL);
-    scatter('sheep', 12, ALL);
-    scatter('sheepPink', 6, ALL);
-    scatter('wolf', 12, ALL);
+    scatter('cow', 10, ALL);
+    scatter('pig', 10, ALL);
+    scatter('sheep', 8, ALL);
+    scatter('sheepPink', 4, ALL);
+    scatter('wolf', 5, ALL);
     scatter('wolf', 6, FOREST);
-    scatter('creeper', 26, ALL);
-    scatter('zombie', 20, ALL);
+    scatter('creeper', 16, ALL);
+    scatter('zombie', 10, ALL);
     scatter('skeleton', 14, QUARRY);
-    scatter('skeleton', 8, ALL);
+    scatter('skeleton', 6, ALL);
 
     // --- Desert
-    scatter('cactus', 22, DESERT);
-    scatter('cactus', 6, ALL);
+    scatter('cactus', 16, DESERT);
+    scatter('cactus', 4, ALL);
     scatter('tntBlock', 8, DESERT);
 
     // --- Quarry blocks
     scatter('stoneStack', 12, QUARRY);
-    scatter('stoneStack', 6, ALL);
+    scatter('stoneStack', 4, ALL);
     scatter('coalOre', 14, QUARRY);
     scatter('ironOre', 10, QUARRY);
     scatter('goldOre', 8, QUARRY);
@@ -241,33 +313,14 @@ export default {
     scatter('stoneBlock', 14, QUARRY);
     scatter('cobbleBlock', 14, QUARRY);
 
-    // --- Starter cluster near spawn
-    scatter('flowerRed', 10, START, 1, 1, 12);
-    scatter('flowerYellow', 10, START, 1, 1, 12);
-    scatter('mushroomRed', 8, START, 1, 1, 12);
-    scatter('grassBlock', 10, START, 1, 1, 12);
-    scatter('chicken', 6, START, 1, 1, 12);
-    scatter('torch', 6, START, 1, 1, 12);
-    scatter('pig', 2, START, 1, 1, 12);
-    STARTER();
-
-    // --- Small everywhere
-    scatter('flowerRed', 35, ALL, 1, 1, 12);
-    scatter('flowerYellow', 35, ALL, 1, 1, 12);
-    scatter('flowerBlue', 30, ALL, 1, 1, 12);
-    scatter('mushroomRed', 20, FOREST, 1, 1, 12);
-    scatter('mushroomBrown', 20, FOREST, 1, 1, 12);
-    scatter('mushroomRed', 14, ALL, 1, 1, 12);
-    scatter('sapling', 15, ALL, 1, 1, 12);
-    scatter('torch', 20, ALL, 1, 1, 12);
-    scatter('grassBlock', 35, ALL, 1, 1, 12);
-    scatter('dirtBlock', 30, ALL, 1, 1, 12);
-    scatter('stoneBlock', 12, ALL, 1, 1, 12);
-    scatter('cobbleBlock', 10, ALL, 1, 1, 12);
-    scatter('coalOre', 10, ALL, 1, 1, 12);
-    scatter('ironOre', 6, ALL, 1, 1, 12);
-    scatter('goldOre', 4, ALL, 1, 1, 12);
-    scatter('chicken', 20, ALL, 1, 1, 12);
-    scatter('diamondOre', 3, ALL, 1, 1, 12);
+    // --- Small things: only in meaningful spots (flower meadows by the pond/paths, no random block litter)
+    for (let i = 0; i < 16; i++) {
+      const cx = randRange(-S + 8, S - 8), cz = randRange(-S + 8, S - 8), k = ctx.pick(['flowerRed', 'flowerYellow', 'flowerBlue']);
+      for (let j = 0; j < 4; j++) put(k, cx + randRange(-1.6, 1.6), cz + randRange(-1.6, 1.6), undefined, 1);
+    }
+        scatter('grassBlock', 8, ALL, 1, 1, 12);
+    scatter('dirtBlock', 6, ALL, 1, 1, 12);
+    scatter('stoneBlock', 4, ALL, 1, 1, 12);
+    scatter('chicken', 8, ALL, 1, 1, 12);
   },
 };

@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { buildProtos } from '../objects/newyork.js';
 
 const ASPHALT = '#4a4d52';
@@ -11,7 +12,26 @@ const RW = 10;
 const IV = [[-120, -95], [-85, -50], [-40, -5], [5, 40], [50, 85], [95, 120]];
 const PARK = { x0: 5, x1: 85, z0: -85, z1: -50 };
 const WATER = { x0: -120, x1: -96, z0: 50, z1: 120 };
-const ISLAND = { x: -108, z: 90 };
+const ISLAND = { x: -108, z: 106 };
+const TS = { x: -22.5, z: -22.5, ang: (48 * Math.PI) / 180 }; // Times Square block centre + angle of Broadway to 7th Ave
+// the two bowtie plaza triangles (world coords [[x,z]x3]) between 7th Ave (vertical) and Broadway (diagonal)
+function bowtie() {
+  const wedge = (u1, u2, h1, h2, L) => {
+    const dot = u1[0] * u2[0] + u1[1] * u2[1];
+    const nrm = (v) => { const l = Math.hypot(v[0], v[1]); return [v[0] / l, v[1] / l]; };
+    const n1 = nrm([u2[0] - dot * u1[0], u2[1] - dot * u1[1]]), n2 = nrm([u1[0] - dot * u2[0], u1[1] - dot * u2[1]]);
+    // intersection of c+n1*h1+t*u1 and c+n2*h2+s*u2
+    const bx = n2[0] * h2 - n1[0] * h1, bz = n2[1] * h2 - n1[1] * h1;
+    const det = u1[0] * -u2[1] - u1[1] * -u2[0];
+    const t = (bx * -u2[1] - bz * -u2[0]) / det;
+    const apex = [TS.x + n1[0] * h1 + t * u1[0], TS.z + n1[1] * h1 + t * u1[1]];
+    const B = [TS.x + n1[0] * h1 + L * u1[0], TS.z + n1[1] * h1 + L * u1[1]];
+    const C = [TS.x + n2[0] * h2 + L * u2[0], TS.z + n2[1] * h2 + L * u2[1]];
+    return [apex, B, C];
+  };
+  const a = TS.ang, d = [-Math.sin(a), -Math.cos(a)];
+  return [wedge([0, -1], d, 1.5, 1.4, 12), wedge([0, 1], [-d[0], -d[1]], 1.5, 1.4, 12)];
+}
 
 export default {
   id: 'newyork',
@@ -127,19 +147,45 @@ export default {
     ];
     addDecal(merge(paths), '#d8c79a', { style: 'sand' });
 
-    // Water + Liberty island
+    // Harbour (SW corner): open water, a quay along the shore, Liberty Island with its own ferry piers
     addDecal(rect((WATER.x0 + WATER.x1) / 2, (WATER.z0 + WATER.z1) / 2, WATER.x1 - WATER.x0, WATER.z1 - WATER.z0), '#3f8fd0', { style: 'water' });
+    addDecal(rect(-95.6, 85, 1.2, 70), '#9a9aa2', { style: 'concrete' }); // quay wall
     const waves = [];
     for (let i = 0; i < 18; i++) waves.push(rect(randRange(-118, -98), randRange(52, 118), randRange(1.5, 3.5), 0.25));
     addDecal(merge(waves), '#8fcaf0', { style: 'water' });
-    addDecal(circle(ISLAND.x, ISLAND.z, 13, 28), '#e3d9b8', { style: 'sand' });
-    addDecal(circle(ISLAND.x, ISLAND.z, 11, 28), '#68b862', { style: 'grass' });
-    addDecal(circle(ISLAND.x, ISLAND.z, 8, 28), '#b7b7bd', { style: 'concrete' });
-    // pier
-    addDecal(rect(-100, 90, 8, 4), '#a97b42');
+    addDecal(circle(ISLAND.x, ISLAND.z, 9.6, 32), '#e3d9b8', { style: 'sand' });
+    addDecal(circle(ISLAND.x, ISLAND.z, 8.2, 32), '#68b862', { style: 'grass' });
+    addDecal(circle(ISLAND.x, ISLAND.z, 6.6, 32), '#b7b7bd', { style: 'concrete' });
+    // ferry dock on the island's north shore, ferry terminal pier on the Manhattan quay
+    addDecal(merge([rect(ISLAND.x, ISLAND.z - 10.6, 5, 4), rect(ISLAND.x - 4.5, ISLAND.z - 11.6, 6, 2.4)]), '#a97b42');
+    addDecal(merge([rect(-99, 56, 7, 3.4), rect(-99, 62, 7, 3.4)]), '#a97b42');
+    addDecal(rect(-96.5, 59, 2.4, 11), '#a97b42');
+
+    // --- Times Square: asphalt plaza block, bowtie pedestrian triangles between 7th Ave and Broadway
+    addDecal(rect(TS.x, TS.z, 34, 34), '#4a4d52', { style: 'asphalt' });
+    const tri = ([a, b, c]) => {
+      const g = new THREE.BufferGeometry();
+      const cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+      const [q, r] = cross > 0 ? [b, c] : [c, b]; // wind so the face points up (+Y)
+      g.setAttribute('position', new THREE.Float32BufferAttribute([a[0], 0, a[1], r[0], 0, r[1], q[0], 0, q[1]], 3));
+      return g;
+    };
+    const wedges = bowtie();
+    addDecal(merge(wedges.map(tri)), '#d9cfc0', { style: 'concrete' });
+    // street markings on 7th Ave + Broadway, red tint at the north end (TKTS), crosswalk zebra at the apexes
+    const dsh = [];
+    for (let t = -16; t <= 16; t += 3) if (Math.abs(t) > 4) {
+      dsh.push(rect(TS.x, TS.z + t, 0.15, 1.6));
+      dsh.push(rect(TS.x - Math.sin(TS.ang) * t, TS.z - Math.cos(TS.ang) * t, 0.15, 1.6, TS.ang));
+    }
+    addDecal(merge(dsh), '#f2c230');
+    addDecal(rect(TS.x - 5, TS.z - 14.5, 8, 4), '#8b1f2b', { style: 'concrete' });
+
+    // Ferry loop in the harbour north of the island (water traffic only)
+    const rtW = ctx.addRoute([[-103, 60], [-103, 88], [-113, 88], [-113, 60]], { loop: true, width: 2, network: 'water' });
     // --- Traffic routes (used by populate): every loop runs both ways so each road carries two lanes.
     // Quadrant loops all turn the same way (shared edges = opposite directions); ring A/O add the +-45 and +-90 roads.
-    const rt = (this.routes = { quads: [], rings: [] });
+    const rt = (this.routes = { quads: [], rings: [], ferry: rtW });
     const loop = (x0, x1, z0, z1, rev) => {
       const pts = [[x0, z0], [x1, z0], [x1, z1], [x0, z1]];
       return ctx.addRoute(rev ? pts.reverse() : pts, { loop: true, width: 6 });
@@ -164,17 +210,26 @@ export default {
 
   populate(ctx) {
     const { randRange, rand, size: S } = ctx;
+    const pick = ctx.pick;
+    const P = Math.PI;
     const LOTS = [[-85, -50, -85, -50], [51, 84, -39, -6], [-119, -96, 5, 40]];
     const inLot = (x, z) => LOTS.some((b) => x > b[0] - 1 && x < b[1] + 1 && z > b[2] - 1 && z < b[3] + 1);
+    // harbour: nothing stands (or wanders) in the water; Liberty Island is placed separately
+    const inWaterZone = (x, z, r = 0) => x - r < WATER.x1 && z + r > WATER.z0;
+    const nearWater = (x, z) => x < WATER.x1 + 12 && z > WATER.z0 - 12;
     // static props never sit on the asphalt (movers may cross it)
     const onRoad = (x, z, m) => ROADS.some((c) => Math.abs(x - c) < RW / 2 + m || Math.abs(z - c) < RW / 2 + m);
     const place = (n, x, z, rot, sc = 1, opts) => {
       if (inLot(x, z)) return false;
       const proto = ctx.protos[n];
+      const r = (proto ? proto.radius * sc : 0);
       const isStatic = opts && 'move' in opts ? !opts.move : proto && !proto.move;
-      if (isStatic && onRoad(x, z, (proto ? proto.radius * sc : 0) * 0.8)) return false;
+      if (inWaterZone(x, z, r * 0.8)) return false;
+      if (!isStatic && nearWater(x, z)) return false;
+      if (isStatic && onRoad(x, z, r * 0.8)) return false;
       return ctx.place(n, x, z, rot, sc, opts);
     };
+    const parked = (n, s) => !inWaterZone(s.x, s.z, 2.5) && ctx.placeParked(n, s);
     // buildings face the nearest street (their front is local +Z)
     const facing = (x, z) => {
       let best = 1e9, rot = 0;
@@ -184,88 +239,95 @@ export default {
       }
       return rot;
     };
-    const scatter = (name, n, [x0, x1, z0, z1], sMin = 1, sMax = 1, tries = 30) => {
-      for (let i = 0; i < n; i++) {
-        for (let t = 0; t < tries; t++) {
-          const x = randRange(x0, x1), z = randRange(z0, z1);
-          const bld = /^(sky|apartment|waterTower|brownstone)/.test(name);
-          if (place(name, x, z, bld ? facing(x, z) : undefined, randRange(sMin, sMax))) break;
-        }
-      }
-    };
-    const ALL = [-S + 3, S - 3, -S + 3, S - 3];
     const inPark = (x, z) => x > PARK.x0 - 6 && x < PARK.x1 + 6 && z > PARK.z0 - 6 && z < PARK.z1 + 6;
-    const inWater = (x, z) => x < WATER.x1 && z > WATER.z0 && Math.hypot(x - ISLAND.x, z - ISLAND.z) > 14;
-    const P = Math.PI;
 
-    // Blocks: [x0,x1,z0,z1] excluding park + water blocks
+    // Blocks: [x0,x1,z0,z1] excluding the park, harbour blocks and the Times Square block
     const blocks = [];
     IV.forEach(([x0, x1], i) => IV.forEach(([z0, z1], j) => {
       const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
-      if (inPark(cx, cz) || (x1 < WATER.x1 + 1 && z1 > WATER.z0 + 1)) return;
-      blocks.push({ x0, x1, z0, z1, cx, cz, i, j, downtown: i >= 1 && i <= 4 && j >= 2 && j <= 4 });
+      if (inPark(cx, cz) || (x1 <= WATER.x1 + 1 && z1 > WATER.z0 + 1)) return;
+      blocks.push({ x0, x1, z0, z1, cx, cz, i, j, ts: i === 2 && j === 2, downtown: i >= 1 && i <= 4 && j >= 2 && j <= 4 });
     }));
-    // sidewalk ring point of a block
-    const ring = (b, inset = 2.2) => {
-      const t = rand() * 4, u = rand();
-      const wx = b.x1 - b.x0 - 2 * inset, wz = b.z1 - b.z0 - 2 * inset;
-      if (t < 1) return [b.x0 + inset + u * wx, b.z0 + inset];
-      if (t < 2) return [b.x0 + inset + u * wx, b.z1 - inset];
-      if (t < 3) return [b.x0 + inset, b.z0 + inset + u * wz];
-      return [b.x1 - inset, b.z0 + inset + u * wz];
-    };
-    const scatterRing = (name, per, sMin = 1, sMax = 1) => {
-      for (const b of blocks) {
-        const cnt = Math.floor(per) + (rand() < per - Math.floor(per) ? 1 : 0);
-        for (let k = 0; k < cnt; k++) {
-          for (let t = 0; t < 12; t++) {
-            const [x, z] = ring(b);
-            if (place(name, x, z, undefined, randRange(sMin, sMax))) break;
-          }
-        }
-      }
-    };
+    const SIDES = [{ ax: 'z', side: -1 }, { ax: 'z', side: 1 }, { ax: 'x', side: -1 }, { ax: 'x', side: 1 }];
 
     // --- Parked cars: nose-in stalls in the lots, parallel along the kerb
     const PARKED = ['taxi', 'car', 'carBlue', 'carGreen', 'taxi', 'van'];
-    for (const s of this.lots) rand() < 0.62 && ctx.placeParked(ctx.pick(PARKED), s);
-    for (const s of this.curb) rand() < 0.22 && ctx.placeParked(ctx.pick(PARKED), s);
+    for (const s of this.lots) rand() < 0.62 && parked(ctx.pick(PARKED), s);
+    for (const s of this.curb) rand() < 0.2 && parked(ctx.pick(PARKED), s);
 
-    // --- Huge landmarks first
-    place('liberty', ISLAND.x, ISLAND.z, 0, 1);
+    // --- Landmarks first
+    ctx.place('liberty', ISLAND.x, ISLAND.z, 0, 1);       // on its own island in the harbour
     place('empire', -22.5, 22.5, 0, 1);
     place('chrysler', 67.5, 67.5, 0, 1);
+    // ferry moored at the island dock + pier bollards on the island and the quay
+    ctx.place('ferry', ISLAND.x + 6.6, ISLAND.z - 11.6, 0, 1);
+    for (const dx of [-2.2, 2.2]) for (const dz of [-8.6, -12.6]) ctx.place('pierPost', ISLAND.x + dx, ISLAND.z + dz, 0, 1);
+    for (const z of [53.8, 57, 60.4, 63.4]) ctx.place('pierPost', -102.6, z, 0, 1);
+    for (let z = 52; z < 118; z += 8) ctx.place('streetLamp', -94.8, z, P, 1);
 
-    // --- Skyscrapers: downtown blocks
-    const towers = ['skyscraperA', 'skyscraperB', 'skyscraperC'];
-    blocks.filter((b) => b.downtown).forEach((b) => {
-      for (let k = 0; k < 2; k++) {
-        const n = towers[Math.floor(rand() * 3)];
-        for (let t = 0; t < 12; t++) { const x = randRange(b.x0 + 8, b.x1 - 8), z = randRange(b.z0 + 8, b.z1 - 8); if (place(n, x, z, facing(x, z), 1)) break; }
-      }
-    });
-    scatter('skyscraperC', 2, [-80, 80, 5, 80], 1, 1, 60);
-
-    // --- Mid-rise: apartments and water-tower buildings fill blocks
-    for (const b of blocks) {
-      const inner = [b.x0 + 4, b.x1 - 4, b.z0 + 4, b.z1 - 4];
-      const nA = b.downtown ? 2 : 1, nW = b.downtown ? 1 : (rand() < 0.5 ? 1 : 0);
-      scatter('apartmentB', b.downtown ? 1 : 0, inner, 1, 1, 25);
-      scatter('apartment', nA, inner, 1, 1, 25);
-      scatter('waterTower', nW, inner, 1, 1, 25);
-    }
-
-    // --- Brownstone rows along block edges (residential + outskirts)
-    for (const b of blocks) {
-      const rows = b.downtown ? 0 : 1;
-      for (let s = 0; s < rows; s++) {
-        for (let x = b.x0 + 4; x < b.x1 - 3; x += 6.4) {
-          place(rand() < 0.5 ? 'brownstone' : 'brownstoneB', x, b.z0 + 4.3, P, 1);
-          place(rand() < 0.5 ? 'brownstone' : 'brownstoneB', x, b.z1 - 4.3, 0, 1);
+    // --- Times Square (block i=2, j=2): bowtie plaza ringed by screen-clad buildings
+    {
+      const ca = Math.cos(TS.ang), sa = Math.sin(TS.ang);
+      const stat = (n, dx, dz, rot, sc = 1) => ctx.place(n, TS.x + dx, TS.z + dz, rot, sc);
+      // buildings along the block edges, fronts toward the plaza
+      stat('tsBldB', 5, -13, 0); stat('tsBldA', 13.4, -13, 0);
+      stat('tsBldC', 13.4, -3, -P / 2); stat('tsBldB', 13.4, 8, -P / 2);
+      // south side kept LOW (3m shops, fronts to the plaza) so the default camera south of the block sees straight into it
+      for (const dx of [-12.8, 12.8]) stat('tsShop', dx, 15.6, P);
+      stat('tsBldA', -13.4, -4, P / 2); stat('tsBldC', -13.4, 6.5, P / 2); stat('tsBldB', -13.4, -13.4, 0);
+      stat('tktsSteps', -5.4, -12.4, 0);
+      stat('policeBooth', -2.2, -5.2, 0.5); stat('policeBooth', 2.2, 5.0, -2.6);
+      for (const [dx, dz] of [[-3.6, -8], [-7.5, -6.5], [3.6, 6.5]]) stat('parkBench', dx, dz, 0.6);
+      for (const [dx, dz] of [[-5.5, -3], [2.5, 3.5], [6, 8], [-7, -9.5]]) stat('streetLamp', dx, dz, 0);
+      for (const [dx, dz] of [[-1.5, -8], [3.6, 9], [-6.5, -10]]) stat('trashCan', dx, dz, 0);
+      stat('hotdogCart', -7.5, -3.6, 0.4); stat('hotdogCart', 6.5, 4.5, 2.5);
+      // yellow cabs queueing along 7th Ave and Broadway
+      const dir = [-sa, -ca];
+      for (const t of [-14, -9.5, 7.5, 12]) stat('taxi', 0, t, -P / 2);
+      for (const t of [-13, -8.5, 8.5, 13.5]) stat('taxi', dir[0] * t, dir[1] * t, Math.atan2(ca, -sa) + (t < 0 ? P : 0));
+      // crowds + street performers inside both wedges
+      const wedges = bowtie();
+      const inTri = (pt, [a, b, c]) => {
+        const sgn = (p1, p2, p3) => (p1[0] - p3[0]) * (p2[1] - p3[1]) - (p2[0] - p3[0]) * (p1[1] - p3[1]);
+        const d1 = sgn(pt, a, b), d2 = sgn(pt, b, c), d3 = sgn(pt, c, a);
+        return !((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0));
+      };
+      const inWedge = (n, name, tries = 40) => {
+        for (let k = 0; k < n; k++) for (let t = 0; t < tries; t++) {
+          let u = rand(), v = rand(); if (u + v > 1) { u = 1 - u; v = 1 - v; }
+          const [a, b, c] = wedges[k % 2];
+          const x = a[0] + u * (b[0] - a[0]) + v * (c[0] - a[0]), z = a[1] + u * (b[1] - a[1]) + v * (c[1] - a[1]);
+          if (ctx.place(typeof name === 'function' ? name() : name, x, z, undefined, 1)) break;
         }
+      };
+      inWedge(36, () => pick(['pedestrian', 'pedestrianB', 'pedestrianC']));
+      for (const n of ['performerRed', 'performerStatue', 'performerGuitar', 'performerBlue', 'performerRed', 'performerStatue']) inWedge(1, n, 30);
+    }
+
+    // --- Block fill: a grid of buildings per block (towers toward the middle), then gaps packed with brownstones
+    for (const b of blocks) {
+      if (b.ts) continue;
+      const w = b.x1 - b.x0, d = b.z1 - b.z0;
+      const nx = Math.max(2, Math.round((w - 12.6) / 11) + 1), nz = Math.max(2, Math.round((d - 12.6) / 11) + 1);
+      const cells = [];
+      for (let gi = 0; gi < nx; gi++) for (let gj = 0; gj < nz; gj++) cells.push({ gi, gj, inner: gi > 0 && gi < nx - 1 && gj > 0 && gj < nz - 1 });
+      cells.sort((a, c) => c.inner - a.inner); // towers first so they get their room
+      for (const { gi, gj, inner } of cells) {
+        const x = b.x0 + 6.3 + ((w - 12.6) * gi) / (nx - 1) + randRange(-0.7, 0.7);
+        const z = b.z0 + 6.3 + ((d - 12.6) * gj) / (nz - 1) + randRange(-0.7, 0.7);
+        let n;
+        if (inner) n = b.downtown ? pick(['skyscraperA', 'skyscraperB', 'skyscraperC', 'skyscraperB']) : pick(['apartmentB', 'apartment', 'skyscraperA']);
+        else if (b.downtown) n = pick(['apartment', 'waterTower', 'apartmentB', 'apartment', 'skyscraperA']);
+        else n = pick(['brownstone', 'brownstoneB', 'waterTower', 'apartment', 'brownstone', 'brownstoneB']);
+        if (!place(n, x, z, facing(x, z), 1)) place(pick(['brownstone', 'brownstoneB', 'waterTower']), x, z, facing(x, z), 1);
+      }
+      for (let k = 0; k < 8; k++) {
+        const x = randRange(b.x0 + 4, b.x1 - 4), z = randRange(b.z0 + 4, b.z1 - 4);
+        place(pick(['brownstone', 'brownstoneB', 'waterTower']), x, z, facing(x, z), 1);
       }
     }
-    for (const b of blocks) scatter(rand() < 0.5 ? 'brownstone' : 'brownstoneB', b.downtown ? 1 : 2, [b.x0 + 4, b.x1 - 4, b.z0 + 4, b.z1 - 4], 1, 1, 15);
+    // a few extra towers in the open
+    for (let k = 0; k < 6; k++) { const x = randRange(-80, 80), z = randRange(5, 80); place('skyscraperC', x, z, facing(x, z), 1); }
 
     // --- Traffic: taxis, cars, vans and buses circle the avenue/street loops in both directions
     const rt = this.routes;
@@ -277,56 +339,79 @@ export default {
       ctx.placeOnRoute('bus', R, { count: Math.ceil(n / 2), speed: 4.5, offset: 2.5, speedJitter: 0.1 });
     };
     rt.quads.forEach((R) => drive(R, 2));
-    rt.rings.forEach(({ half, R }) => drive(R, half === 90 ? 4 : 2));
-    // --- Subway entrances + park trees
-    scatterRing('subway', 1);
-    scatter('bigTree', 22, [PARK.x0 + 3, PARK.x1 - 3, PARK.z0 + 3, PARK.z1 - 3]);
-    scatter('tree', 40, [PARK.x0 + 3, PARK.x1 - 3, PARK.z0 + 3, PARK.z1 - 3]);
-    scatter('bench', 14, [PARK.x0 + 3, PARK.x1 - 3, PARK.z0 + 3, PARK.z1 - 3]);
-    scatter('pigeon', 30, [PARK.x0 + 2, PARK.x1 - 2, PARK.z0 + 2, PARK.z1 - 2], 0.9, 1.1, 12);
-    scatter('pedestrian', 20, [PARK.x0 + 2, PARK.x1 - 2, PARK.z0 + 2, PARK.z1 - 2], 0.9, 1.1, 12);
-    scatter('bike', 6, [PARK.x0 + 2, PARK.x1 - 2, PARK.z0 + 2, PARK.z1 - 2], 0.9, 1.1, 12);
+    rt.rings.forEach(({ half, R }) => drive(R, half === 90 ? 3 : 2));
+    // two ferries cruising the harbour loop
+    ctx.placeOnRoute('ferry', rt.ferry, { count: 2, speed: 3, offset: 0 });
 
-    // --- Starter cluster near spawn (around the intersection, sidewalks and roads)
-    const START = [-28, 28, -28, 28];
-    scatter('pedestrian', 8, START, 0.9, 1.1, 12);
-    scatter('pedestrianB', 5, START, 0.9, 1.1, 12);
-    scatter('pigeon', 12, START, 0.9, 1.1, 12);
-    scatter('hydrant', 8, START, 0.9, 1.1, 12);
-    scatter('trashCan', 8, START, 0.9, 1.1, 12);
-    scatter('newsBox', 5, START, 0.9, 1.1, 12);
-    scatter('hotdogCart', 2, START, 0.95, 1.05, 12);
-    scatter('mailbox', 4, START, 0.9, 1.1, 12);
-
-    // --- Street furniture on sidewalks
-    scatterRing('streetLamp', 1);
-    scatterRing('hotdogCart', 1);
-    scatterRing('bench', 1);
-    scatterRing('bike', 1);
-    scatterRing('mailbox', 1);
-    scatterRing('newsBox', 1);
-    scatterRing('hydrant', 1);
-    scatterRing('trashCan', 2);
-    scatterRing('tree', 1);
-
-    // --- Small: pedestrians + pigeons everywhere (not in the water)
-    const dryScatter = (name, n, sMin, sMax) => {
-      for (let i = 0; i < n; i++) {
-        for (let t = 0; t < 12; t++) {
-          const x = randRange(-S + 3, S - 3), z = randRange(-S + 3, S - 3);
-          if (inWater(x, z) || (x < WATER.x1 && z > WATER.z0)) continue;
-          const nearWater = x < WATER.x1 + 10 && z > WATER.z0 - 10;
-          if (place(name, x, z, undefined, randRange(sMin, sMax), nearWater ? { move: null } : undefined)) break;
-        }
-      }
+    // --- Central Park: trees, benches, lamps along the paths, hedge edging, a few walkers
+    const PX = [PARK.x0 + 3, PARK.x1 - 3, PARK.z0 + 3, PARK.z1 - 3];
+    const scatter = (name, n, [x0, x1, z0, z1], sMin = 1, sMax = 1, tries = 30) => {
+      for (let i = 0; i < n; i++) for (let t = 0; t < tries; t++) if (place(name, randRange(x0, x1), randRange(z0, z1), undefined, randRange(sMin, sMax))) break;
     };
-    dryScatter('pedestrian', 40, 0.9, 1.1);
-    dryScatter('pedestrianB', 40, 0.9, 1.1);
-    dryScatter('pedestrianC', 40, 0.9, 1.1);
-    dryScatter('pigeon', 50, 0.9, 1.1);
-    dryScatter('trashCan', 30, 0.9, 1.1);
-    dryScatter('hydrant', 25, 0.9, 1.1);
-    dryScatter('newsBox', 15, 0.9, 1.1);
-    dryScatter('mailbox', 15, 0.9, 1.1);
+    scatter('bigTree', 22, PX);
+    scatter('tree', 36, PX);
+    for (let x = PARK.x0 + 6; x < PARK.x1 - 2; x += 13) { place('bench', x, (PARK.z0 + PARK.z1) / 2 + 2.2, P, 1); place('streetLamp', x + 6, (PARK.z0 + PARK.z1) / 2 - 2.0, 0, 1); place('trashCan', x + 3, (PARK.z0 + PARK.z1) / 2 + 2, 0, 1); }
+    for (let z = PARK.z0 + 6; z < PARK.z1 - 2; z += 13) place('bench', 43.4, z, P / 2, 1);
+    for (let x = PARK.x0 + 1; x < PARK.x1; x += 3.4) { place('hedge', x, PARK.z0 + 0.5, 0, 1); place('hedge', x, PARK.z1 - 0.5, 0, 1); }
+    scatter('pigeon', 12, [PARK.x0 + 2, PARK.x1 - 2, PARK.z0 + 2, PARK.z1 - 2], 0.9, 1.1, 12);
+    scatter('pedestrian', 14, [PARK.x0 + 2, PARK.x1 - 2, PARK.z0 + 2, PARK.z1 - 2], 0.9, 1.1, 12);
+    scatter('bike', 4, [PARK.x0 + 2, PARK.x1 - 2, PARK.z0 + 2, PARK.z1 - 2], 0.9, 1.1, 12);
+    // iron fences along one long side of each surface lot
+    for (let x = -83; x < -52; x += 1.9) ctx.place('ironFence', x, -84.6, 0, 1, { move: null });
+    for (let z = -38; z < -7; z += 1.9) ctx.place('ironFence', 50.4, z, P / 2, 1, { move: null });
+    for (let z = 7; z < 38; z += 1.9) ctx.place('ironFence', -95.4, z, P / 2, 1, { move: null });
+
+    // --- Street furniture, in order: lamps, trees, benches and bins along every block side;
+    // a hydrant / mailbox / news box / bin cluster (+ a hot-dog cart now and then) at each corner.
+    for (const b of blocks) {
+      if (b.ts) continue;
+      for (const sd of SIDES) {
+        const lo = sd.ax === 'z' ? b.x0 : b.z0, hi = sd.ax === 'z' ? b.x1 : b.z1;
+        const edge = sd.ax === 'z' ? (sd.side < 0 ? b.z0 : b.z1) : (sd.side < 0 ? b.x0 : b.x1);
+        const fd = sd.side < 0 ? edge + 1.4 : edge - 1.4;
+        const at = (a, name, rot, dd = 0) => place(name, sd.ax === 'z' ? a : fd + dd, sd.ax === 'z' ? fd + dd : a, rot, 1);
+        const yawAlong = sd.ax === 'z' ? 0 : P / 2;
+        const ph = randRange(0, 4);
+        for (let a = lo + 7 + ph; a < hi - 5; a += 22) rand() < 0.7 && at(a, 'streetLamp', sd.ax === 'z' ? (sd.side < 0 ? 0 : P) : (sd.side < 0 ? -P / 2 : P / 2));
+        for (let a = lo + 3 + ph; a < hi - 3; a += 12) if (rand() < 0.7) at(a, 'planter', yawAlong);
+        for (let a = lo + 12 + ph; a < hi - 8; a += 38) rand() < 0.35 && at(a, 'bench', sd.ax === 'z' ? (sd.side < 0 ? P : 0) : (sd.side < 0 ? P / 2 : -P / 2));
+        if (rand() < 0.5) at(lo + 10 + ph, 'bike', yawAlong);
+      }
+    }
+    for (const a of ROADS) for (const bz of ROADS) for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+      const cx = a + sx * 6.5, cz = bz + sz * 6.5;
+      const kinds = ['hydrant', 'mailbox', 'newsBox', 'trashCan'];
+      if ((Math.abs(a) + Math.abs(bz)) % 90 === 0) place('streetLamp', cx, cz, sx > 0 ? P / 2 : -P / 2, 1);
+      place(kinds[(Math.abs(a) / 45 + Math.abs(bz) / 45 + (sx > 0 ? 1 : 0) + (sz > 0 ? 2 : 0)) % 4 | 0], cx + sx * 1.6, cz, undefined, 1);
+      place(kinds[((Math.abs(a) / 45 + Math.abs(bz) / 45 + (sx > 0 ? 0 : 1) + (sz > 0 ? 1 : 0)) | 0) % 4], cx, cz + sz * 1.6, undefined, 1);
+      if (rand() < 0.4) place('hotdogCart', cx + sx * 2.6, cz + sz * 2.6, Math.atan2(sx, sz), 1);
+      if (rand() < 0.25) place('subway', cx + sx * 1.0, cz + sz * 4.5, 0, 1);
+    }
+
+    // bollard lines guarding the pavement corners round the spawn crossing
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) for (let k = 0; k < 6; k++) {
+      place('bollard', sx * 5.6, sz * (11 + k * 2.8), 0, 1);
+      place('bollard', sx * (11 + k * 2.8), sz * 5.6, 0, 1);
+    }
+
+    // --- People: pedestrians walk the pavements; pigeons gather in a few plazas (not in the harbour)
+    let np = 0;
+    for (let tries = 0; np < 110 && tries < 800; tries++) {
+      const b = pick(blocks), sd = pick(SIDES);
+      const edge = sd.ax === 'z' ? (sd.side < 0 ? b.z0 : b.z1) : (sd.side < 0 ? b.x0 : b.x1);
+      const a = randRange(sd.ax === 'z' ? b.x0 + 2 : b.z0 + 2, sd.ax === 'z' ? b.x1 - 2 : b.z1 - 2);
+      const dd = sd.side < 0 ? edge + 2.4 : edge - 2.4;
+      if (place(pick(['pedestrian', 'pedestrianB', 'pedestrianC']), sd.ax === 'z' ? a : dd, sd.ax === 'z' ? dd : a, undefined, 1)) np++;
+    }
+    let ng = 0;
+    for (let tries = 0; ng < 18 && tries < 200; tries++) {
+      const b = pick(blocks); if (b.ts) continue;
+      if (place('pigeon', randRange(b.x0 + 3, b.x1 - 3), randRange(b.z0 + 3, b.z1 - 3), undefined, 1)) ng++;
+    }
+    // subway entrances at a few corners are placed above; add the remaining ones on block edges
+    for (const b of blocks) if (rand() < 0.4 && !b.ts) {
+      const x = rand() < 0.5 ? b.x0 + 2.4 : b.x1 - 2.4, z = randRange(b.z0 + 6, b.z1 - 6);
+      place('subway', x, z, x < b.cx ? P / 2 : -P / 2, 1);
+    }
   },
 };

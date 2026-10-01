@@ -81,61 +81,130 @@ const person = (shirt, skin, hat = false) => {
   if (hat) p.push(tube(0.33, 0.33, 0.07, C.gold, { y: 1.71, surface: 'fabric' }), tube(0.23, 0.25, 0.18, C.gold, { y: 1.82, surface: 'fabric' }));
   return p;
 };
-const palazzo = (w, d, h, wall, awning) => {
-  // Set the solid core behind the glazing; separate facade strips leave real openings.
-  const p = [box(w, h, d - 0.48, wall, { y: h / 2, surface: 'stucco' }), box(w + 0.4, 0.35, d + 0.4, C.shade, { y: 0.175, surface: 'stone' }),
-    box(w + 0.55, 0.3, d + 0.55, C.light, { y: h - 0.1, surface: 'stone' }),
-    extrude([[-d / 2 - 0.4, 0], [d / 2 + 0.4, 0], [0, 1.8]], w + 0.7, C.roof, { y: h, ry: PI / 2, surface: 'roof', textureRotation: PI / 2 }),
-    tube(0.14, 0.14, w + 0.75, C.terra, { y: h + 1.8, rz: PI / 2, surface: 'roof' }),
-    box(0.7, 1.3, 0.7, wall, { x: w / 3, z: -d / 4, y: h + 1.5 }),
-    extrude(arch(1.6, 2.5), 0.035, C.dark, { z: d / 2 - 0.2, surface: 'wood' }), box(1.9, 0.18, 0.5, C.light, { y: 0.09, z: d / 2 + 0.2, surface: 'stone' })];
-  const nx = Math.max(2, Math.floor(w / 2.4)), floors = Math.max(1, Math.floor((h - 2.7) / 2.5));
+const FH = 3.1, GH = 4.4;
+const gableShape = (z0, zf) => { const zr = (z0 + zf) / 2; return [[-zf, 0], [-z0, 0], [-zr, 1]]; };
+// Roman apartment block / palazzo: arched shopfronts below, shuttered windows above, low terracotta roof with terrace.
+const townhouse = (c) => {
+  const { w, d, floors, nb, wall, shutter, awning, base = '#dbc7a0', trim = C.light, roof = C.roof, balc = false, terrace = true, flowers = 3, sign = '#3f5f4a' } = c;
+  const h = GH + (floors - 1) * FH, front = d / 2, bw = w / nb, mid = (nb - 1) / 2, bx = i => (i - mid) * bw;
+  const ww = Math.min(1.25, bw * 0.4);
+  const p = [box(w, h, d - 0.6, wall, { y: h / 2, surface: 'stucco' }),
+    box(w + 0.35, 0.4, d + 0.35, C.shade, { y: 0.2, surface: 'stone' }),
+    box(w + 0.3, 0.3, d + 0.3, trim, { y: GH, surface: 'stone' }),
+    box(w + 0.7, 0.4, d + 0.7, trim, { y: h - 0.05, surface: 'stone' }),
+    box(w + 0.4, 0.22, d + 0.4, C.shade, { y: h - 0.4, surface: 'stone' })];
+  for (const s of [-1, 1]) p.push(box(0.45, h - GH, 0.28, trim, { x: s * (w / 2 - 0.2), y: (GH + h) / 2, z: front + 0.03, surface: 'stone' }));
+  // Ground floor: arched bays, centre bay is the wooden door, others are shops with signs and awnings.
+  for (let i = 0; i < nb; i++) {
+    const opw = Math.min(2.7, bw * 0.68), openH = 3.3, spring = openH - opw / 2, x = bx(i), door = i === mid;
+    p.push(extrude(archWall(bw, GH, opw, spring), 0.18, base, { x, z: front - 0.09, surface: 'stone' }));
+    if (door) p.push(extrude(arch(opw - 0.1, openH - 0.1), 0.06, C.wood, { x, z: front - 0.25, surface: 'wood' }),
+      box(opw + 0.3, 0.2, 0.3, trim, { x, y: 0.1, z: front + 0.1, surface: 'stone' }));
+    else {
+      p.push(extrude(arch(opw - 0.15, openH - 0.15), 0.04, '#33454c', { x, z: front - 0.3, surface: 'glass' }),
+        box(opw * 0.7, 0.9, 0.04, '#ffcf86', { x, y: 1.0, z: front - 0.27, emissive: 0.45 }),
+        box(opw + 0.2, 0.5, 0.08, sign, { x, y: 3.85, z: front + 0.04, surface: 'paint' }));
+      if (awning) for (let k = 0; k < 4; k++) p.push(box(opw * 1.1 / 4, 0.08, 1.3, k % 2 ? C.white : awning, { x: x + ((k + 0.5) / 4 - 0.5) * opw * 1.1, y: 3.2, z: front + 0.6, rx: 0.38, surface: 'fabric' }));
+    }
+  }
+  // Upper floors: real window openings, shutters, balconies on the piano nobile, flower boxes.
+  const rows = [];
+  for (let j = 0; j < floors - 1; j++) {
+    const nobile = j === 0, wh = nobile ? 2.3 : 2.0, yc = j * FH + (nobile ? 1.95 : 1.75);
+    rows.push({ j, wh, yc });
+  }
   const openings = [];
-  for (let i = 0; i < nx; i++) for (let j = 0; j < floors; j++) {
-    openings.push({ x: (i - (nx - 1) / 2) * (w - 1.8) / nx, y: 3.8 + j * 2.4, width: 0.92, height: 1.45 });
-  }
-  for (const side of [-1, 1]) {
-    p.push(...facadeWall(w, h, 0.18, wall,
-      side === 1 ? [...openings, { x: 0, y: 1.25, width: 1.6, height: 2.5 }] : openings,
-      { z: side * (d / 2 - 0.09), ry: side > 0 ? 0 : PI }));
-    // A small cornice lip and metal gutter give the roof a layered edge.
-    p.push(box(w + 0.4, 0.12, 0.24, C.shade, { y: h - 0.36, z: side * (d / 2 + 0.08), surface: 'stone' }),
-      tube(0.06, 0.06, w + 0.3, C.iron, { y: h + 0.04, z: side * (d / 2 + 0.3), rz: PI / 2, surface: 'metal' }));
-  }
-  // Fill the corners above the arch while leaving its curved doorway open.
-  p.push(extrude(archWall(1.6, 2.5, 1.6, 1.7), 0.18, wall, { z: d / 2 - 0.09, surface: 'stucco' }),
-    ...[-1, 1].map(side => box(0.12, 1.7, 0.21, C.light, { x: side * 0.8, y: 0.85, z: d / 2 - 0.06, surface: 'stone' })),
-    box(0.045, 1.65, 0.035, C.wood, { y: 0.93, z: d / 2 - 0.17, surface: 'wood' }),
-    ...[-1, 1].map(side => ball(0.035, C.gold, { x: side * 0.13, y: 1.03, z: d / 2 - 0.15, surface: 'metal' })));
-  for (let i = 0; i < 12; i++) {
-    const a = (i + 0.5) / 12 * PI;
-    p.push(box(0.16, 0.22, 0.21, C.light, { x: 0.85 * Math.cos(a), y: 1.7 + 0.85 * Math.sin(a), z: d / 2 - 0.06, rz: a - PI / 2, surface: 'stone' }));
-  }
-  for (const side of [-1, 1]) for (let i = 0; i < nx; i++) for (let j = 0; j < floors; j++) {
-    const x = (i - (nx - 1) / 2) * (w - 1.8) / nx, y = 3.8 + j * 2.4, z = side * (d / 2 + 0.06);
-    p.push(...recessedWindow(0.92, 1.45, 0.2, { x, y, z: side * d / 2, ry: side > 0 ? 0 : PI, frameColor: C.light, glassColor: C.glass, mullion: true }),
-      box(0.28, 1.35, 0.13, C.green, { x: x - 0.64, y, z, surface: 'wood' }), box(0.28, 1.35, 0.13, C.green, { x: x + 0.64, y, z, surface: 'wood' }),
-      box(1.1, 0.13, 0.35, C.light, { x, y: y - 0.77, z }));
-    for (const dx of [-0.64, 0.64]) for (let slat = 0; slat < 6; slat++) {
-      p.push(box(0.24, 0.055, 0.045, C.darkLeaf, { x: x + dx, y: y - 0.5 + slat * 0.2, z: z + side * 0.07, rx: side * 0.2, surface: 'wood' }));
-    }
-    if (j === 0 && side === 1) {
-      p.push(box(1.4, 0.15, 0.7, C.shade, { x, y: y - 0.7, z: z + 0.25 }), box(1.35, 0.06, 0.06, C.iron, { x, y: y - 0.07, z: z + 0.6 }));
-      for (const dx of [-0.55, -0.28, 0, 0.28, 0.55]) p.push(box(0.04, 0.6, 0.04, C.iron, { x: x + dx, y: y - 0.38, z: z + 0.6 }));
-      for (const dx of [-0.65, 0.65]) {
-        p.push(box(0.06, 0.06, 0.6, C.iron, { x: x + dx, y: y - 0.07, z: z + 0.3, surface: 'metal' }),
-          box(0.04, 0.6, 0.04, C.iron, { x: x + dx, y: y - 0.38, z: z + 0.3, surface: 'metal' }));
-      }
+  for (const r of rows) for (let i = 0; i < nb; i++) openings.push({ x: bx(i), y: r.yc, width: ww, height: r.wh });
+  p.push(...facadeWall(w, h - GH, 0.18, wall, openings, { y: GH, z: front - 0.09 }));
+  for (const r of rows) for (let i = 0; i < nb; i++) {
+    const x = bx(i), y = GH + r.yc;
+    p.push(...recessedWindow(ww, r.wh, 0.2, { x, y, z: front, frameColor: trim, glassColor: C.glass, mullion: true, frame: 0.08 }));
+    for (const s of [-1, 1]) p.push(box(ww * 0.42, r.wh, 0.07, shutter, { x: x + s * (ww / 2 + ww * 0.21 + 0.03), y, z: front + 0.04, surface: 'wood' }));
+    if (balc && r.j === 0) {
+      const by = y - r.wh / 2 - 0.08;
+      p.push(box(ww + 0.8, 0.12, 0.75, trim, { x, y: by, z: front + 0.3, surface: 'stone' }), box(ww + 0.75, 0.06, 0.06, C.iron, { x, y: by + 0.85, z: front + 0.65, surface: 'metal' }),
+        ...[-1, 1].map(s => box(0.06, 0.06, 0.6, C.iron, { x: x + s * (ww / 2 + 0.36), y: by + 0.85, z: front + 0.35, surface: 'metal' })),
+        ...[-0.45, -0.15, 0.15, 0.45].map(k => box(0.04, 0.8, 0.04, C.iron, { x: x + k * (ww / 0.9), y: by + 0.45, z: front + 0.65, surface: 'metal' })));
+    } else if ((i * 7 + r.j * 5 + floors) % 4 < flowers % 4 + (flowers > 0 ? 0 : -9)) {
+      p.push(box(ww + 0.15, 0.28, 0.3, C.terra, { x, y: y - r.wh / 2 - 0.15, z: front + 0.2 }), ball(0.3, (i + r.j) % 2 ? '#e8708a' : '#e96a4a', { x, y: y - r.wh / 2 + 0.1, z: front + 0.2, sy: 0.6, segments: 7, rings: 4, surface: 'foliage' }));
     }
   }
-  if (awning) for (let i = 0; i < 8; i++) p.push(box((w - 1) / 8, 0.12, 1.6, i % 2 ? C.white : awning, { x: ((i + 0.5) / 8 - 0.5) * (w - 1), y: 2.5, z: d / 2 + 0.75, rx: 0.13, surface: 'fabric' }));
-  // Long tile seams keep the roofs recognizable from the game's overhead camera.
-  const roofRun = d / 2 + 0.4, roofSlope = Math.atan2(1.8, roofRun);
-  for (let x = -w / 2; x <= w / 2; x += 0.85) for (const side of [-1, 1]) {
-    p.push(box(0.07, 0.08, Math.hypot(roofRun, 1.8), C.terra, {
-      x, y: h + 0.955, z: side * roofRun / 2, rx: side * roofSlope, surface: 'roof',
-    }));
+  // Side and back walls: simple framed windows.
+  const nz = Math.max(2, Math.floor(d / 3.6));
+  for (let j = -1; j < floors - 1; j++) {
+    const y = j < 0 ? 1.9 : GH + j * FH + 1.75, wh = j < 0 ? 1.4 : 1.9;
+    for (let k = 0; k < nz; k++) {
+      const z = (k - (nz - 1) / 2) * (d - 2.4) / nz;
+      for (const s of [-1, 1]) p.push(box(1.1, wh + 0.2, 0.05, trim, { x: s * (w / 2 + 0.01), y, z, rotY: 0, ry: PI / 2, surface: 'stone' }), box(0.9, wh, 0.07, C.glass, { x: s * (w / 2 + 0.02), y, z, ry: PI / 2, surface: 'glass' }));
+    }
+    for (let i = 0; i < nb; i++) {
+      p.push(box(1.1, wh + 0.2, 0.05, trim, { x: bx(i), y, z: -(d / 2 - 0.3) - 0.01, surface: 'stone' }), box(0.9, wh, 0.07, C.glass, { x: bx(i), y, z: -(d / 2 - 0.3) - 0.02, surface: 'glass' }));
+    }
   }
+  // Low-pitched terracotta roof; front strip is a roof terrace with parapet and plants.
+  const z0 = -d / 2 - 0.35, zf = terrace ? d / 2 - 3.6 : d / 2 + 0.35, rh = 1.5, zr = (z0 + zf) / 2, y0 = h + 0.15;
+  p.push(extrude(gableShape(z0, zf).map(([a, b]) => [a, b * rh]), w + 0.5, roof, { y: y0, ry: PI / 2, surface: 'roof', textureRotation: PI / 2 }),
+    tube(0.12, 0.12, w + 0.5, C.terra, { y: y0 + rh, z: zr, rz: PI / 2, surface: 'roof' }));
+  for (let x = -w / 2 + 0.4; x <= w / 2 - 0.3; x += 0.9) {
+    p.push(box(0.07, 0.07, Math.hypot(zr - z0, rh), C.terra, { x, y: y0 + rh / 2 + 0.05, z: (z0 + zr) / 2, rx: -Math.atan2(rh, zr - z0), surface: 'roof' }),
+      box(0.07, 0.07, Math.hypot(zf - zr, rh), C.terra, { x, y: y0 + rh / 2 + 0.05, z: (zf + zr) / 2, rx: Math.atan2(rh, zf - zr), surface: 'roof' }));
+  }
+  if (terrace) {
+    const tz = (zf + d / 2 + 0.35) / 2, tl = d / 2 + 0.35 - zf;
+    p.push(box(w - 0.1, 0.2, tl, '#c9a47c', { y: y0 + 0.05, z: tz, surface: 'stone' }),
+      box(w + 0.3, 0.7, 0.16, trim, { y: y0 + 0.4, z: d / 2 + 0.3, surface: 'stone' }),
+      ...[-1, 1].map(s => box(0.16, 0.7, tl, trim, { x: s * (w / 2 + 0.1), y: y0 + 0.4, z: tz, surface: 'stone' })));
+    const n = Math.max(3, Math.round(w / 3));
+    for (let i = 0; i < n; i++) {
+      const x = (i - (n - 1) / 2) * (w - 1.6) / n, z = d / 2 - 0.6 - (i % 2) * 1.2;
+      p.push(tube(0.27, 0.2, 0.4, C.terra, { x, y: y0 + 0.35, z, segments: 8 }), ball(i % 3 === 0 ? 0.5 : 0.36, i % 2 ? C.leaf : C.darkLeaf, { x, y: y0 + 0.8, z, segments: 8, rings: 5, surface: 'foliage' }));
+    }
+    if (c.altana) p.push(box(2.4, 1.7, 2, C.wood, { x: -w / 4, y: y0 + 0.9, z: tz - 0.4, surface: 'wood' }), box(2.9, 0.18, 2.5, roof, { x: -w / 4, y: y0 + 1.85, z: tz - 0.4, surface: 'roof' }));
+  }
+  p.push(box(0.8, 1.6, 0.8, wall, { x: w / 3, y: y0 + rh + 0.4, z: zr - 0.8, surface: 'stucco' }), box(1, 0.15, 1, C.shade, { x: w / 3, y: y0 + rh + 1.25, z: zr - 0.8 }));
+  return p;
+};
+// Palazzo with an inner courtyard: four wings around a stone court with a fountain and trees.
+const courtPalazzo = (c) => {
+  const { w, d, floors, wall, shutter, awning } = c, t = 5.5, h = GH + (floors - 1) * FH, front = d / 2, nb = 7, bw = w / nb, mid = 3, bx = i => (i - mid) * bw;
+  const trim = C.light, ww = 1.2;
+  const p = [box(w, h, t, wall, { y: h / 2, z: front - 0.3 - t / 2, surface: 'stucco' }), box(w, h, t, wall, { y: h / 2, z: -front + t / 2, surface: 'stucco' }),
+    ...[-1, 1].map(s => box(t, h, d - 2 * t, wall, { x: s * (w / 2 - t / 2), y: h / 2, z: -0.15, surface: 'stucco' })),
+    box(w + 0.35, 0.4, d + 0.35, C.shade, { y: 0.2, surface: 'stone' }),
+    box(w - 2 * t, 0.15, d - 2 * t - 0.3, '#cdbb94', { y: 0.1, z: -0.15, surface: 'stone' }),
+    box(w + 0.3, 0.3, d + 0.3, trim, { y: GH, surface: 'stone' }), box(w + 0.7, 0.4, d + 0.7, trim, { y: h - 0.05, surface: 'stone' })];
+  for (let i = 0; i < nb; i++) {
+    const door = i === mid, opw = door ? 3.2 : 2.4, openH = door ? 3.9 : 3.3, x = bx(i);
+    p.push(extrude(archWall(bw, GH, opw, openH - opw / 2), 0.18, '#d8c39b', { x, z: front - 0.09, surface: 'stone' }));
+    if (door) p.push(box(opw, 0.1, 5.4, '#cdbb94', { x, y: 0.12, z: front - 3 })); // open gateway to the court
+    else p.push(extrude(arch(opw - 0.15, openH - 0.15), 0.04, '#33454c', { x, z: front - 0.3, surface: 'glass' }), box(opw + 0.2, 0.5, 0.08, '#6d3f2f', { x, y: 3.85, z: front + 0.04, surface: 'paint' }));
+    if (!door && awning) for (let k = 0; k < 4; k++) p.push(box(opw * 1.1 / 4, 0.08, 1.3, k % 2 ? C.white : awning, { x: x + ((k + 0.5) / 4 - 0.5) * opw * 1.1, y: 3.2, z: front + 0.6, rx: 0.38, surface: 'fabric' }));
+  }
+  const openings = [];
+  for (let j = 0; j < floors - 1; j++) for (let i = 0; i < nb; i++) openings.push({ x: bx(i), y: j * FH + 1.9, width: ww, height: 2.2 });
+  p.push(...facadeWall(w, h - GH, 0.18, wall, openings, { y: GH, z: front - 0.09 }));
+  for (let j = 0; j < floors - 1; j++) for (let i = 0; i < nb; i++) {
+    const x = bx(i), y = GH + j * FH + 1.9;
+    p.push(...recessedWindow(ww, 2.2, 0.2, { x, y, z: front, frameColor: trim, glassColor: C.glass, mullion: true, frame: 0.08 }));
+    for (const s of [-1, 1]) p.push(box(0.5, 2.2, 0.07, shutter, { x: x + s * 0.88, y, z: front + 0.04, surface: 'wood' }));
+  }
+  // Windows on the other outer walls and onto the court (flat framed panes).
+  for (let j = 0; j < floors - 1; j++) {
+    const y = GH + j * FH + 1.75;
+    for (let k = 0; k < 6; k++) {
+      const x = (k - 2.5) * (w - 3) / 6, z = (k - 2.5) * (d - 3) / 6;
+      p.push(box(0.9, 1.9, 0.07, C.glass, { x, y, z: -front - 0.02 + t, surface: 'glass' }), box(0.9, 1.9, 0.07, C.glass, { x, y, z: -front - 0.02, surface: 'glass' }),
+        box(0.9, 1.9, 0.07, C.glass, { x, y, z: front - 0.3 - t + 0.02, surface: 'glass' }));
+      for (const s of [-1, 1]) p.push(box(0.07, 1.9, 0.9, C.glass, { x: s * (w / 2 + 0.02), y, z, surface: 'glass' }), box(0.07, 1.9, 0.9, C.glass, { x: s * (w / 2 - t - 0.02), y, z: z * 0.5, surface: 'glass' }));
+    }
+  }
+  const rh = 1.1, y0 = h + 0.15;
+  p.push(extrude([[-t / 2 - 0.3, 0], [t / 2 + 0.3, 0], [0, rh]], w + 0.5, C.roof, { y: y0, z: front - 0.3 - t / 2, ry: PI / 2, surface: 'roof' }),
+    extrude([[-t / 2 - 0.3, 0], [t / 2 + 0.3, 0], [0, rh]], w + 0.5, C.roof, { y: y0, z: -front + t / 2, ry: PI / 2, surface: 'roof' }),
+    ...[-1, 1].map(s => extrude([[-t / 2 - 0.3, 0], [t / 2 + 0.3, 0], [0, rh]], d - 2 * t + 1, C.roof, { x: s * (w / 2 - t / 2), y: y0, z: -0.15, surface: 'roof' })));
+  // Courtyard: fountain, lemon trees, pots.
+  p.push(tube(0.9, 1, 0.5, C.stone, { y: 0.4, z: -0.15, surface: 'stone' }), tube(0.8, 0.8, 0.06, C.water, { y: 0.66, z: -0.15 }), tube(0.15, 0.2, 1.2, C.stone, { y: 1.1, z: -0.15 }), ball(0.3, C.light, { y: 1.8, z: -0.15 }));
+  for (const [x, z] of [[-3.2, -1.2], [3.2, -1.2], [-3.2, 1.8], [3.2, 1.8]]) p.push(tube(0.25, 0.2, 0.4, C.terra, { x, y: 0.3, z }), tube(0.08, 0.1, 1.1, C.wood, { x, y: 0.9, z }), ball(0.75, C.leaf, { x, y: 1.9, z, segments: 8, rings: 5, surface: 'foliage' }));
   return p;
 };
 
@@ -217,6 +286,21 @@ const scooter = color => [rbox(1.9, 0.48, 0.52, color, { y: 0.62, segments: 5, s
     tube(0.08, 0.08, 0.7, C.chrome, { x: -0.8, y: 0.53, rz: PI / 2, surface: 'metal' })];
   add('scooter', scooter(C.mint), { value: 3.5 });
   add('scooterRed', scooter(C.red), { value: 3.5 });
+  add('scooterCream', scooter('#eadfb8'), { value: 3.5 });
+  add('scooterBlue', scooter('#6d9fcf'), { value: 3.5 });
+  add('scooterYellow', scooter('#e9bd4a'), { value: 3.5 });
+  // Roman "nasone" drinking tap, hedges, iron fence, planters.
+  add('nasone', [tube(0.22, 0.26, 0.2, C.iron, { y: 0.1, segments: 8 }), tube(0.13, 0.17, 1, '#43523f', { y: 0.7, segments: 8, surface: 'metal' }),
+    ball(0.16, '#43523f', { y: 1.22, segments: 8, rings: 5 }), tube(0.04, 0.04, 0.3, C.iron, { x: 0.15, y: 0.95, rz: PI / 2, segments: 6 }),
+    box(0.4, 0.06, 0.4, C.shade, { x: 0.3, y: 0.03 })], { value: 1.3 });
+  add('hedge', [rbox(1.8, 0.85, 0.7, C.green, { y: 0.43, bevel: 0.25, segments: 2, surface: 'foliage' }), ball(0.4, C.leaf, { x: -0.4, y: 0.85, sy: 0.6, segments: 7, rings: 4, surface: 'foliage' }),
+    ball(0.38, C.leaf, { x: 0.45, y: 0.82, sy: 0.6, segments: 7, rings: 4, surface: 'foliage' })], { value: 0.9 });
+  add('ironFence', [box(1.8, 0.07, 0.07, C.iron, { y: 0.85, surface: 'metal' }), box(1.8, 0.07, 0.07, C.iron, { y: 0.25, surface: 'metal' }),
+    ...Array.from({ length: 8 }, (_, i) => box(0.045, 0.95, 0.045, C.iron, { x: (i - 3.5) * 0.24, y: 0.48, surface: 'metal' })),
+    ...[-0.88, 0.88].map(x => box(0.12, 1.05, 0.12, C.iron, { x, y: 0.52, surface: 'metal' }))], { value: 0.7 });
+  add('planterBox', [box(1.6, 0.5, 0.55, C.terra, { y: 0.25, surface: 'stone' }), ...[-0.55, 0, 0.55].map((x, i) => ball(0.38, i === 1 ? C.leaf : C.green, { x, y: 0.7, segments: 7, rings: 5, surface: 'foliage' })),
+    ...[-0.3, 0.3, 0.7, -0.7].map(x => ball(0.1, '#f28a9d', { x, y: 0.98, z: 0.1, segments: 6, rings: 4 }))], { value: 1.1 });
+  add('topiary', [tube(0.28, 0.22, 0.45, C.terra, { y: 0.22, segments: 8 }), tube(0.05, 0.06, 0.5, C.wood, { y: 0.7, segments: 6 }), ball(0.4, C.green, { y: 1.15, sy: 1.15, segments: 8, rings: 6, surface: 'foliage' })], { value: 0.9 });
   const car = color => {
     const p = [
       rbox(3.6, 0.62, 1.42, color, { y: 0.66, segments: 5, surface: 'paint' }),
@@ -260,10 +344,23 @@ const scooter = color => [rbox(1.9, 0.48, 0.52, color, { y: 0.62, segments: 5, s
     ...Array.from({ length: 8 }, (_, i) => box(0.1, 0.85, 2.58, C.red, { x: -3.2 + i * 0.92, y: 2.42 })),
     box(0.1, 0.55, 1.9, C.glass, { x: 3.94, y: 2.36, surface: 'glass' }), ...wheels(2.65, 1.24, 0.57),
     ...[-0.86, 0.86].map(z => ball(0.17, C.white, { x: 3.92, z, y: 0.95, sx: 0.35 }))], { value: 12 });
-  add('palazzoCream', palazzo(8, 6.2, 8.6, C.cream, C.green), { value: 28 });
-  add('palazzoPeach', palazzo(9.4, 7.2, 10.8, C.peach, C.red), { value: 36 });
-  add('palazzoOchre', palazzo(6.4, 5.8, 6.2, C.ochre, C.blue), { value: 23 });
-  add('palazzoPink', palazzo(7.6, 6.5, 9, C.pink), { value: 30 });
+  const O = '#dfa15b', TC = '#c9694a', BO = '#d9803f', CR = '#f1dfb8', RS = '#e6a58f', YL = '#e6b95f', SI = '#c27c4e';
+  const GR = '#4f7a4a', BR = '#6a4a31', DG = '#3f6a58';
+  const ap = (name, cfg, value) => add(name, townhouse(cfg), { value: value * 0.8, radius: Math.max(cfg.w, cfg.d) * 0.42 });
+  ap('aptOchre', { w: 9, d: 10, floors: 5, nb: 3, wall: O, shutter: GR, awning: GR, flowers: 2, altana: true }, 15);
+  ap('aptTerra', { w: 9, d: 10, floors: 4, nb: 3, wall: TC, shutter: DG, awning: C.red, flowers: 3, sign: '#5b3a2a' }, 12);
+  ap('aptBurnt', { w: 12, d: 10, floors: 4, nb: 3, wall: BO, shutter: BR, awning: GR, flowers: 1, sign: '#2f4f5a' }, 17);
+  ap('aptCream', { w: 12, d: 10, floors: 5, nb: 3, wall: CR, shutter: GR, awning: C.red, balc: true, sign: '#6a3b2c' }, 20);
+  ap('aptRose', { w: 12, d: 10.5, floors: 6, nb: 3, wall: RS, shutter: DG, awning: C.gold, flowers: 2, altana: true }, 25);
+  ap('aptSienna', { w: 15.5, d: 10.5, floors: 5, nb: 5, wall: SI, shutter: GR, awning: C.red, balc: true, flowers: 1 }, 30);
+  ap('aptYellow', { w: 15.5, d: 10.5, floors: 4, nb: 5, wall: YL, shutter: BR, awning: DG, flowers: 3, sign: '#7a3f30' }, 25);
+  ap('aptTall', { w: 13, d: 10, floors: 6, nb: 3, wall: '#d4894e', shutter: DG, awning: C.white, balc: true, flowers: 1, altana: true }, 29);
+  ap('palazzoCream', { w: 19, d: 11, floors: 4, nb: 5, wall: CR, shutter: GR, awning: C.red, balc: true, flowers: 0, trim: '#fff5de' }, 38);
+  ap('palazzoOchre', { w: 19, d: 11, floors: 5, nb: 5, wall: O, shutter: DG, awning: GR, balc: true, flowers: 1, sign: '#6b3a2b' }, 46);
+  ap('aptSlim', { w: 6.5, d: 9, floors: 4, nb: 2, wall: '#e0b27a', shutter: GR, awning: C.red, flowers: 3, sign: '#5b3a2a' }, 8);
+  ap('aptSlimTall', { w: 6.5, d: 9, floors: 5, nb: 2, wall: '#e8c58f', shutter: DG, awning: GR, balc: true, flowers: 2, altana: true }, 10);
+  ap('aptSquare', { w: 8, d: 8, floors: 4, nb: 2, wall: '#d99a6a', shutter: BR, awning: DG, flowers: 2, sign: '#2f4f5a' }, 9);
+  add('palazzoCourt', courtPalazzo({ w: 22, d: 18, floors: 4, wall: '#d8905a', shutter: GR, awning: C.red }), { value: 60, radius: 9.2 });
   add('obelisk', [box(3.8, 0.5, 3.8, C.shade, { y: 0.25 }), box(2.5, 1.2, 2.5, C.stone, { y: 1.1 }),
     tube(0.55, 0.87, 12, '#d89f78', { y: 7.5, segments: 4, ry: PI / 4 }), cone(0.55, 1.4, C.gold, { y: 14.2, segments: 4, ry: PI / 4 }),
     ...[3, 4.8, 6.6, 8.4, 10.2, 12].map(y => box(0.25, 0.35, 0.035, '#ae7259', { y, z: 0.61 }))], { value: 24 });

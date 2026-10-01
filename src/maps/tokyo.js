@@ -11,13 +11,16 @@ const GRAVEL = '#d6c8a4';
 const VENDING = ['vendingRed', 'vendingBlue', 'vendingGreen', 'vendingYellow', 'vendingPink'];
 const KEI = ['keiCarWhite', 'keiCarYellow', 'keiCarBlue', 'keiCarPink'];
 const SHOPS = ['shopA', 'shopB', 'shopC', 'shopD'];
+const BI = [[-120, -67], [-57, -7], [7, 57], [67, 120]]; // city block intervals (between road edges)
 const PEOPLE = ['salaryman', 'schoolgirl', 'tourist', 'kimono'];
 const WALKERS = new Set([...PEOPLE, 'cat', 'cat2']);
 
 // Regions (used by both decorate and populate)
 const PARK = [72, 112, 8, 58];      // cherry blossom park (x0,x1,z0,z1)
 const TEMPLE = [-106, -70, -46, -14];
-const RAIL_Z = -100;
+const RAIL = [-108, -100];   // two parallel tracks (centre-lines), one eastbound one westbound
+const RAIL_MID = -104;
+const RAIL_X = 170;          // the loop turns round out here, beyond the visible map
 
 const inBox = (x, z, b, m = 0) => x > b[0] - m && x < b[1] + m && z > b[2] - m && z < b[3] + m;
 
@@ -48,6 +51,15 @@ export default {
     { type: 'mountains', side: 'north', color: '#7d8fb0', color2: '#ffffff' },
   ],
   edge: 'barrier',
+  // Rail corridor beyond both map edges: no backdrop buildings, and tunnel sheds swallow the trains as they leave.
+  backdropClear: [
+    { x0: 118, z0: -118, x1: 200, z1: -90 },
+    { x0: -200, z0: -118, x1: -118, z1: -90 },
+  ],
+  tunnels: [
+    { side: 'east', z0: -113, z1: -95, length: 62, height: 9, mouths: 2 },
+    { side: 'west', z0: -113, z1: -95, length: 62, height: 9, mouths: 2 },
+  ],
   buildProtos,
 
   routes: null,
@@ -114,18 +126,29 @@ export default {
     addDecal(merge(stop), WHITE);
     addDecal(merge(mh), '#3d4046');
 
-    // --- Railway (bullet train line)
-    addDecal(rect(0, RAIL_Z, S * 2.4, 11), '#6b665e', { style: 'sand' });
-    addDecal(rect(0, RAIL_Z, S * 2.4, 9), '#8f8a7e', { style: 'sand' });
-    const sleepers = [];
-    for (let x = -S; x <= S; x += 1.6) sleepers.push(rect(x, RAIL_Z, 0.5, 5.6));
+    // --- Railway: two parallel tracks. Rails sit at +-1.1 from each centre-line (the bogie gauge of the train model).
+    const xings = [[0, 14], [-62, 10], [62, 10]];
+    const inXing = (x, m = 0) => xings.some(([c, w]) => Math.abs(x - c) < w / 2 + m);
+    for (const zc of RAIL) {
+      addDecal(rect(0, zc, S * 2.6, 7.2), '#6b665e', { style: 'sand' });
+      addDecal(rect(0, zc, S * 2.6, 5.4), '#8f8a7e', { style: 'sand' });
+    }
+    // platform between the tracks + yellow safety lines
+    addDecal(rect(-32, RAIL_MID, 48, 3.6), '#b9b3a6', { style: 'concrete' });
+    addDecal(merge([rect(-32, RAIL_MID - 1.5, 48, 0.25), rect(-32, RAIL_MID + 1.5, 48, 0.25)]), '#f2c230');
+    // level crossings: the roads that run through the railway are repainted over the track beds
+    addDecal(merge(xings.map(([c, w]) => rect(c, RAIL_MID, w, 17))), ROAD, { style: 'asphalt' });
+    const sleepers = [], rails = [];
+    for (const zc of RAIL) {
+      for (let x = -S - 20; x <= S + 20; x += 1.6) if (!inXing(x, 0.6)) sleepers.push(rect(x, zc, 0.5, 3.8));
+      rails.push(rect(0, zc - 1.1, S * 2.6, 0.26), rect(0, zc + 1.1, S * 2.6, 0.26));
+    }
     addDecal(merge(sleepers), '#5a4a3a');
-    addDecal(merge([rect(0, RAIL_Z - 2.0, S * 2.4, 0.3), rect(0, RAIL_Z + 2.0, S * 2.4, 0.3)]), '#d9dde2');
-    // gravel platform + station stripe
-    addDecal(rect(0, RAIL_Z + 8.5, S * 2.4, 6), '#b9b3a6', { style: 'concrete' });
-    addDecal(rect(0, RAIL_Z + 6.2, S * 2.4, 0.4), '#f2c230');
-    // level crossings: the roads that run through the railway are repainted over the track bed and platform
-    addDecal(merge([rect(0, RAIL_Z + 3, 14, 19), rect(-62, RAIL_Z + 3, 10, 19), rect(62, RAIL_Z + 3, 10, 19)]), ROAD, { style: 'asphalt' });
+    addDecal(merge(rails), '#dfe3e8');
+    // crossing stripes
+    const xs = [];
+    for (const [c, w] of xings) for (const sd of [-1, 1]) for (let i = 0; i < 6; i++) xs.push(rect(c - w / 2 + 1 + i * (w - 2) / 5, RAIL_MID + sd * 8.1, 0.7, 0.9, 0));
+    addDecal(merge(xs), '#f2c230');
 
     // --- Cherry blossom park
     const px = (PARK[0] + PARK[1]) / 2, pz = (PARK[2] + PARK[3]) / 2;
@@ -147,17 +170,13 @@ export default {
     addDecal(rect(-88, -30, 3.6, TEMPLE[3] - TEMPLE[2]), '#b3aa96', { style: 'concrete' });
     addDecal(merge([rect(-88, -14, 8, 1.2), rect(-88, -44, 12, 1.2)]), '#b3aa96');
 
-    // --- Colourful shop-front tile strips in the blocks
-    const tiles = [];
-    for (let i = 0; i < 30; i++) {
-      const x = randRange(-S + 6, S - 6), z = randRange(-S + 6, S - 6);
-      const w = randRange(4, 9), d = randRange(4, 9);
-      // shop-front tiles lie on the blocks only, never across a road (roads: 0 +-7, +-62 +-5)
-      const hitsRoad = (v, h) => Math.abs(v) < 9 + h || Math.abs(Math.abs(v) - 62) < 5 + h;
-      if (hitsRoad(x, w / 2) || hitsRoad(z, d / 2)) continue;
-      tiles.push(rect(x, z, w, d));
+    // --- Paved block slabs (a touch lighter than the street)
+    const slabs = [];
+    for (const [x0, x1] of BI) for (const [z0, z1] of BI) {
+      const zz0 = z0 < -100 ? -86 : z0;
+      slabs.push(rect((x0 + x1) / 2, (zz0 + z1) / 2, x1 - x0 - 1, z1 - zz0 - 1));
     }
-    addDecal(merge(tiles), '#9a9da6', { style: 'concrete' });
+    addDecal(merge(slabs), '#9a9da6', { style: 'concrete' });
     // --- Traffic routes (used by populate): four quadrant loops on the main + secondary roads (all turning the
     // same way so shared edges carry opposite directions), spurs to the map edge, and the bullet train line.
     const rt = (this.routes = { quads: [], spurs: [] });
@@ -168,11 +187,13 @@ export default {
     }
     for (const s of [-1, 1]) {
       rt.spurs.push(ctx.addRoute([[s * 66, 0], [s * 110, 0]], { loop: false, width: 8 }));
-      rt.spurs.push(ctx.addRoute([[0, s * 66], [0, s * 110]], { loop: false, width: 8 }));
+      rt.spurs.push(ctx.addRoute([[0, s * 66], [0, s < 0 ? -88 : 110]], { loop: false, width: 8 }));
       rt.spurs.push(ctx.addRoute([[-110, s * 62], [110, s * 62]], { loop: false, width: 6 }));
-      rt.spurs.push(ctx.addRoute([[s * 62, -110], [s * 62, 110]], { loop: false, width: 6 }));
+      rt.spurs.push(ctx.addRoute([[s * 62, -88], [s * 62, 110]], { loop: false, width: 6 }));
     }
-    rt.rail = ctx.addRoute([[-100, RAIL_Z], [100, RAIL_Z]], { loop: false, width: 8, network: 'rail' });
+    // One closed loop: east along the south track, round a U-turn far outside the map, west along the north track.
+    // Offset 0 + a loop route = the train follows the centre-line exactly with no lane shift and no cap semicircle.
+    rt.rail = ctx.addRoute([[-RAIL_X, RAIL[1]], [RAIL_X, RAIL[1]], [RAIL_X, RAIL[0]], [-RAIL_X, RAIL[0]]], { loop: true, width: 5, network: 'rail' });
 
     // --- Parking: a station lot beside the railway, a shopping-district lot, a temple-side lot, and kerbside
     // parking along the two main streets (only the loop segments / spurs that run on the wide roads).
@@ -192,97 +213,164 @@ export default {
   },
 
   populate(ctx) {
-    const { place, randRange, rand, pick, size: S } = ctx;
+    const { randRange, rand, pick, size: S } = ctx;
+    const P = Math.PI;
     const isRoad = (x, z, m = 0) =>
       (Math.abs(x) < 14 + m && Math.abs(z) < 14 + m) || // scramble crossing
-      Math.abs(x) < 8 + m || Math.abs(z) < 8 + m ||
-      Math.abs(Math.abs(x) - 62) < 6 + m || Math.abs(Math.abs(z) - 62) < 6 + m;
-    const blocked = (x, z, m = 0) =>
-      isRoad(x, z, m) || Math.abs(z - RAIL_Z) < 8 + m || (z < RAIL_Z + 15 && z > RAIL_Z - 8) ||
-      inBox(x, z, PARK, m) || inBox(x, z, TEMPLE, m);
-    // city(): buildings etc. only in the block interiors
+      Math.abs(x) < 7 + m || Math.abs(z) < 7 + m ||
+      Math.abs(Math.abs(x) - 62) < 5 + m || Math.abs(Math.abs(z) - 62) < 5 + m;
+    const inRail = (z, m = 0) => z < -94 - m && z > -114 + m;
     const LOTS = [[-55, -15, -85, -67], [77, 113, -55, -21], [-110, -70, 15, 49]];
-    const inLot = (x, z) => LOTS.some((b) => x > b[0] - 1 && x < b[1] + 1 && z > b[2] - 1 && z < b[3] + 1);
-    // buildings face the nearest street (their front is local +Z)
-    const facing = (x, z) => {
-      let best = 1e9, rot = 0;
-      for (const c of [-62, 0, 62]) {
-        if (Math.abs(z - c) < best) { best = Math.abs(z - c); rot = z < c ? 0 : Math.PI; }
-        if (Math.abs(x - c) < best) { best = Math.abs(x - c); rot = x < c ? Math.PI / 2 : -Math.PI / 2; }
-      }
-      return rot;
-    };
-    const city = (names, n, box, sMin = 1, sMax = 1, tries = 40) => {
-      const list = Array.isArray(names) ? names : [names];
-      for (let i = 0; i < n; i++) {
-        for (let t = 0; t < tries; t++) {
-          const x = randRange(box[0], box[1]), z = randRange(box[2], box[3]);
-          if (blocked(x, z, 1) || inLot(x, z)) continue;
-          const nm = pick(list);
-          if (place(nm, x, z, SHOPS.includes(nm) || nm.startsWith('sky') || nm === 'neonTower' ? facing(x, z) : undefined, randRange(sMin, sMax))) break;
-        }
-      }
-    };
-    // any(): small stuff anywhere except the railway
-    const any = (names, n, box, sMin = 0.9, sMax = 1.1, tries = 20) => {
-      const list = Array.isArray(names) ? names : [names];
-      for (let i = 0; i < n; i++) {
-        for (let t = 0; t < tries; t++) {
-          const x = randRange(box[0], box[1]), z = randRange(box[2], box[3]);
-          if (Math.abs(z - RAIL_Z) < 6 || inLot(x, z)) continue;
-          const nm = pick(list);
-          if (!WALKERS.has(nm) && isRoad(x, z, -0.5)) continue;
-          if (place(nm, x, z, undefined, randRange(sMin, sMax))) break;
-        }
-      }
-    };
-    const ALL = [-S + 3, S - 3, -S + 3, S - 3];
+    const inLot = (x, z, m = 1) => LOTS.some((b) => x > b[0] - m && x < b[1] + m && z > b[2] - m && z < b[3] + m);
+    const blocked = (x, z, m = 0) => isRoad(x, z, m) || inRail(z, -m) || inBox(x, z, PARK, m) || inBox(x, z, TEMPLE, m) || inLot(x, z, m);
+    const put = (name, x, z, rot, sc = 1) => !blocked(x, z, 0.3) && ctx.place(name, x, z, rot, sc);
 
-    // --- Parked cars: nose-in stalls in the lots, parallel along the wide-road kerbs
+    // ---- building catalogue: proto -> [frontage spacing, depth]
+    const BLD = {
+      shopA: [4.9, 3.8], shopB: [4.9, 3.8], shopC: [5.2, 4.4], shopD: [4.6, 3.8],
+      pencilA: [3.7, 4.2], pencilB: [3.7, 4.2], pencilC: [3.9, 4.2], pencilD: [3.5, 4.2],
+      konbiniA: [7.2, 5.5], konbiniB: [7.2, 5.5], konbiniC: [6.6, 5.2],
+      aptA: [6.6, 6], aptB: [6.5, 6], aptC: [7.6, 6.4], aptD: [6.1, 5.6],
+      officeA: [7.4, 6], officeB: [8.3, 6.5], officeC: [6.5, 6], officeD: [9.2, 7],
+    };
+    const SHOP_ROW = ['shopA', 'shopB', 'shopC', 'shopD', 'pencilA', 'pencilB', 'pencilC', 'pencilD', 'aptA', 'aptB', 'officeA', 'konbiniA', 'konbiniB', 'konbiniC'];
+    const MID_ROW = ['aptA', 'aptB', 'aptC', 'aptD', 'officeA', 'officeB', 'officeC', 'officeD', 'pencilA', 'pencilD', 'shopB', 'shopC', 'konbiniA'];
+    const TALL = ['skyA', 'skyB', 'skyC', 'neonTower', 'officeC', 'officeA', 'aptD', 'skyC', 'skyA'];
+    const FILL = ['aptA', 'aptB', 'aptC', 'officeB', 'officeD', 'officeA', 'aptD', 'neonTower', 'skyB'];
+    const SET = 3.2;
+
+    // ---- railway station + landmarks first (so they get room)
+    ctx.place('stationHall', -32, -91, 0, 1);
+    ctx.place('tokyoTower', 32, -32, 0, 1);
+    ctx.place('skytree', -32, 32, 0, 1);
+
+    // ---- parked cars: nose-in stalls in the lots, parallel along the wide-road kerbs
     const PARKED = [...KEI, 'taxi', ...KEI];
     for (const s of this.lots.station) rand() < 0.65 && ctx.placeParked(pick(PARKED), s);
     for (const s of this.lots.shop) rand() < 0.6 && ctx.placeParked(pick(PARKED), s);
     for (const s of this.lots.temple) rand() < 0.5 && ctx.placeParked(pick(PARKED), s);
-    for (const s of this.curb) rand() < 0.5 && ctx.placeParked(pick(PARKED), s);
+    for (const s of this.curb) rand() < 0.4 && ctx.placeParked(pick(PARKED), s);
 
-    // --- Huge landmarks
-    place('tokyoTower', 32, -32, 0, 1);
-    place('skytree', -32, 32, 0, 1);
+    // ---- railway: closed loop, offset 0, so every set rides exactly on a track
+    ctx.placeOnRoute('bulletSet', this.routes.rail, { count: 5, speed: 15, offset: 0 });
 
-    // --- Railway: bullet train sets (nose + 2 cars) shuttling along the line
-    ctx.placeOnRoute('bulletSet', this.routes.rail, { count: 2, speed: 12, offset: 0 });
-
-    // --- Temple compound
-    place('pagoda', -101, -22, 0, 1);
-    place('shrine', -88, -38, 0, 1);
-    place('shrine', -76, -22, -Math.PI / 2, 0.85);
-    place('torii', -88, -14, 0, 1);
-    place('torii', -88, -21, 0, 0.9);
-    place('torii', -88, -27, 0, 0.8);
-    for (let z = -44; z < -14; z += 5) {
-      place('lantern', -84.2, z, 0, 1);
-      place('lantern', -91.8, z, 0, 1);
-    }
-    for (let i = 0; i < 6; i++) place('omamori', randRange(-104, -72), randRange(-44, -16), undefined, 1);
-    for (let i = 0; i < 4; i++) place('bonsai', randRange(-104, -72), randRange(-44, -16), undefined, 1);
-    place('pineTree', -98, -40, 0, 1);
-    place('pineTree', -104, -34, 0, 0.9);
-    place('pineTree', -74, -42, 0, 1);
+    // ---- temple compound
+    ctx.place('pagoda', -101, -22, 0, 1);
+    ctx.place('shrine', -88, -38, 0, 1);
+    ctx.place('shrine', -76, -22, -P / 2, 0.85);
+    ctx.place('torii', -88, -14, 0, 1);
+    ctx.place('torii', -88, -21, 0, 0.9);
+    ctx.place('torii', -88, -27, 0, 0.8);
+    for (let z = -44; z < -14; z += 5) { ctx.place('lantern', -84.2, z, 0, 1); ctx.place('lantern', -91.8, z, 0, 1); }
+    ctx.place('pineTree', -98, -40, 0, 1);
+    ctx.place('pineTree', -104, -34, 0, 0.9);
+    ctx.place('pineTree', -74, -42, 0, 1);
+    for (const x of [-104, -94, -80, -72]) for (const z of [-44, -16]) ctx.place('bonsai', x, z, 0, 1);
+    for (let i = 0; i < 5; i++) ctx.place('omamori', -91.5 + (i - 2) * 1.2, -38.5, 0, 1);
+    for (let x = -106; x <= -70; x += 3.4) { ctx.place('hedgeDark', x, -46.8, 0, 1); ctx.place('hedgeDark', x, -13.2, 0, 1); }
+    for (let z = -45; z <= -15; z += 1.7) { ctx.place('fenceSeg', -106.8, z, P / 2, 1); ctx.place('fenceSeg', -69.2, z, P / 2, 1); }
     // gates on the main streets
-    place('torii', 0, 32, Math.PI / 2, 1);
-    place('torii', 0, -32, Math.PI / 2, 1);
-    place('torii', -32, 0, 0, 1);
+    ctx.place('torii', 0, 32, P / 2, 1);
+    ctx.place('torii', 0, -32, P / 2, 1);
+    ctx.place('torii', -32, 0, 0, 1);
 
-    // --- Skyscrapers and neon towers
-    const CITY_ALL = [-S + 3, S - 3, -S + 3, S - 3];
-    city('skyC', 5, CITY_ALL);
-    city('skyA', 9, CITY_ALL);
-    city('skyB', 9, CITY_ALL);
-    city('pagoda', 1, CITY_ALL);
-    city('neonTower', 9, CITY_ALL);
-    city('shrine', 1, CITY_ALL);
+    // ---- station platform + trackside
+    for (let x = -52; x <= -12; x += 8) ctx.place('streetLight', x, RAIL_MID, 0, 1);
+    for (const x of [-48, -36, -24, -14]) { ctx.place('parkBench', x, RAIL_MID - 0.6, 0, 1); ctx.place('trashBin', x + 3, RAIL_MID + 0.6, 0, 1); }
+    for (const x of [-44, -30, -18]) ctx.place(pick(VENDING), x, RAIL_MID + 0.5, 0, 1);
+    for (let x = -112; x <= 112; x += 6.4) {
+      if (Math.abs(x) < 8.5 || Math.abs(Math.abs(x) - 62) < 6.5) continue;
+      ctx.place('fenceSeg', x, -94.6, 0, 1);
+    }
+    for (let x = -108; x <= 108; x += 27) if (!isRoad(x, -94.6, 3)) { ctx.place('signalPost', x, -94.6, 0, 1); ctx.place('signalPost', x + 13, -113.6, 0, 1); }
 
-    // --- Traffic: buses / trucks / taxis / kei cars drive the roads; a few scooters weave along too
+    // ---- cherry blossom park: trees, benches round the fountain, lamps + bins along the gravel paths, hedge edge
+    const px = (PARK[0] + PARK[1]) / 2, pz = (PARK[2] + PARK[3]) / 2;
+    for (let i = 0; i < 24; i++) ctx.place(pick(['sakura', 'sakura2']), randRange(PARK[0] + 4, PARK[1] - 4), randRange(PARK[2] + 4, PARK[3] - 4), undefined, randRange(0.9, 1.15));
+    for (let i = 0; i < 22; i++) ctx.place('sakuraSmall', randRange(PARK[0] + 2, PARK[1] - 2), randRange(PARK[2] + 2, PARK[3] - 2), undefined, randRange(0.9, 1.15));
+    for (let a = 0; a < 6; a++) ctx.place('parkBench', px + 6 + Math.cos(a * P / 3) * 11.4, pz + 12 + Math.sin(a * P / 3) * 11.4, -a * P / 3 + P / 2, 1);
+    for (let x = PARK[0] + 4; x < PARK[1] - 2; x += 9) { ctx.place('streetLight', x, pz - 6, 0, 1); ctx.place('trashBin', x + 4.5, pz - 6.2, 0, 1); }
+    for (let z = PARK[2] + 5; z < PARK[3] - 2; z += 9) { ctx.place('streetLight', px - 6, z, 0, 1); ctx.place('parkBench', px - 6.3, z + 4.5, P / 2, 1); }
+    for (let x = PARK[0] + 1; x < PARK[1]; x += 3.4) { ctx.place('hedge', x, PARK[2] + 0.4, 0, 1); ctx.place('hedge', x, PARK[3] - 0.4, 0, 1); }
+    for (let z = PARK[2] + 2; z < PARK[3]; z += 3.4) ctx.place('hedge', PARK[0] + 0.4, z, P / 2, 1);
+    for (let i = 0; i < 26; i++) ctx.place(pick(PEOPLE), randRange(PARK[0] + 3, PARK[1] - 3), randRange(PARK[2] + 3, PARK[3] - 3), undefined, 1);
+    for (let i = 0; i < 4; i++) ctx.place(pick(['cat', 'cat2']), randRange(PARK[0] + 3, PARK[1] - 3), randRange(PARK[2] + 3, PARK[3] - 3), undefined, 1);
+    ctx.place('shrine', 82, 50, 0, 0.9);
+
+    // ---- city blocks: street-front rows (shops, pencil buildings, konbini, apartments), then towers inside
+    const SIDES = [
+      { ax: 'z', side: -1, rot: P }, { ax: 'z', side: 1, rot: 0 }, { ax: 'x', side: -1, rot: -P / 2 }, { ax: 'x', side: 1, rot: P / 2 },
+    ];
+    const blocks = [];
+    BI.forEach(([x0, x1], i) => BI.forEach(([z0, z1], j) => {
+      if (j === 0) { blocks.push({ x0, x1, z0: -86, z1, i, j, rail: true }); return; } // south of the rail strip only
+      if (i === 3 && j === 2) return; // park
+      blocks.push({ x0, x1, z0, z1, i, j });
+    }));
+    for (const b of blocks) {
+      for (const sd of SIDES) {
+        const alongLo = sd.ax === 'z' ? b.x0 : b.z0, alongHi = sd.ax === 'z' ? b.x1 : b.z1;
+        const edge = sd.ax === 'z' ? (sd.side < 0 ? b.z0 : b.z1) : (sd.side < 0 ? b.x0 : b.x1);
+        if (Math.abs(edge) > 118) continue; // map edge: no road there
+        if (b.rail && sd.ax === 'z' && sd.side < 0) continue; // faces the railway
+        const main = Math.abs(edge) === 7;
+        const row = main || Math.abs(Math.abs(edge) - 57) < 1 || Math.abs(Math.abs(edge) - 67) < 1 ? SHOP_ROW : MID_ROW;
+        let t = alongLo + 1.5;
+        while (t < alongHi - 3) {
+          const nm = pick(row), [w, d] = BLD[nm];
+          if (t + w > alongHi - 1) break;
+          const c = t + w / 2, off = SET + d / 2;
+          const depth = sd.side < 0 ? edge + off : edge - off;
+          const ok = rand() < (main ? 0.9 : 0.78) && put(nm, sd.ax === 'z' ? c : depth, sd.ax === 'z' ? depth : c, sd.rot, 1);
+          if (!ok) {
+            // gap in the row: a hedge run along the property line instead
+            const n = Math.min(1, Math.floor(w / 1.7));
+            for (let k = 0; k < n; k++) {
+              const cc = t + 0.85 + k * 1.7, dd = sd.side < 0 ? edge + SET + 0.6 : edge - SET - 0.6;
+              put(rand() < 0.5 ? 'hedge' : 'hedgeDark', sd.ax === 'z' ? cc : dd, sd.ax === 'z' ? dd : cc, sd.ax === 'z' ? 0 : P / 2, 1);
+            }
+          } else if (rand() < 0.5) {
+            // doorstep: flower pots / A-frame menu / cafe table at the shop front
+            const fd = sd.side < 0 ? edge + SET - 0.7 : edge - SET + 0.7;
+            const sh = c + (rand() < 0.5 ? -1.2 : 1.4);
+            const r = rand();
+            put(r < 0.35 ? pick(['flowerPot', 'flowerPotB']) : r < 0.55 ? 'aFrame' : r < 0.8 ? 'cafeSet' : 'planter', sd.ax === 'z' ? sh : fd, sd.ax === 'z' ? fd : sh, sd.rot, 1);
+          }
+          t += w;
+        }
+        // sidewalk furniture on this side
+        const fd = sd.side < 0 ? edge + 1.3 : edge - 1.3;
+        const at = (a, name, yawAlong = true) => put(name, sd.ax === 'z' ? a : fd, sd.ax === 'z' ? fd : a, yawAlong ? (sd.ax === 'z' ? 0 : P / 2) : undefined, 1);
+        const phase = randRange(0, 6);
+        for (let a = alongLo + 3 + phase; a < alongHi - 3; a += 25) at(a, 'streetLight');
+        for (let a = alongLo + 6 + phase; a < alongHi - 3; a += 11) {
+          const r = rand();
+          at(a, r < 0.35 ? 'trashBin' : r < 0.55 ? 'postBox' : r < 0.9 ? pick(VENDING) : 'bikeRack');
+          if (r > 0.9) { at(a + 0.3, 'bicycle', false); at(a - 0.5, 'bicycle', false); }
+        }
+        if (main) for (let a = alongLo + 2; a < alongHi - 2; a += 14) at(a, 'bollard');
+        // bollard + planter lines guarding the pavement corners round the scramble crossing
+        if (main && alongLo * alongHi < 0 === false && (alongLo === 7 || alongHi === -7)) {
+          const dir = alongLo === 7 ? 1 : -1;
+          for (let k = 0; k < 6; k++) at(dir * (15.5 + k * 2.6), k % 3 === 2 ? 'planter' : 'bollard');
+        }
+        if (!main) for (let a = alongLo + 8 + phase; a < alongHi - 6; a += 40) {
+          const bd = sd.side < 0 ? edge + 0.6 : edge - 0.6;
+          put('utilityPole', sd.ax === 'z' ? a : bd, sd.ax === 'z' ? bd : a, 0, 1);
+        }
+      }
+      // interior: tallest toward the block centre
+      const cx = (b.x0 + b.x1) / 2, cz = (b.z0 + b.z1) / 2;
+      for (let gx = b.x0 + 12; gx <= b.x1 - 12; gx += 9.6) for (let gz = b.z0 + 12; gz <= b.z1 - 12; gz += 9.6) {
+        const x = gx + randRange(-1.2, 1.2), z = gz + randRange(-1.2, 1.2);
+        const central = Math.hypot(x - cx, z - cz) < 16;
+        const rot = Math.abs(x - cx) > Math.abs(z - cz) ? (x < cx ? -P / 2 : P / 2) : (z < cz ? P : 0);
+        if (rand() < 0.88 && !put(pick(central ? TALL : FILL), x, z, rot, 1)) put(pick(FILL), x, z, rot, 1);
+      }
+      for (let k = 0; k < 3; k++) put(pick(['trashBin', 'bicycle', 'planter']), randRange(b.x0 + 10, b.x1 - 10), randRange(b.z0 + 10, b.z1 - 10), undefined, 1);
+    }
+
+    // ---- traffic: buses / trucks / taxis / kei cars drive the roads; a few scooters weave along too
     const rt = this.routes;
     const HEAVY = ['busTokyo', 'scrambleTruck'];
     const LIGHT = [...KEI, 'taxi', 'taxi'];
@@ -298,34 +386,18 @@ export default {
       if (long) ctx.placeOnRoute(pick(LIGHT), R, { count: 1, speed: 7, offset: 2.2, speedJitter: 0.2 });
     });
 
-    // --- Medium: shops, stalls, cherry blossoms, trees
-    city(SHOPS, 55, CITY_ALL);
-    city('ramenStall', 24, CITY_ALL);
-    city('bentoStall', 22, CITY_ALL);
-    for (let i = 0; i < 26; i++) place(pick(['sakura', 'sakura2']), randRange(PARK[0] + 4, PARK[1] - 4), randRange(PARK[2] + 4, PARK[3] - 4), undefined, randRange(0.9, 1.15));
-    for (let i = 0; i < 24; i++) place('sakuraSmall', randRange(PARK[0] + 2, PARK[1] - 2), randRange(PARK[2] + 2, PARK[3] - 2), undefined, randRange(0.9, 1.15));
-    city(['sakura', 'sakura2', 'pineTree'], 22, CITY_ALL);
-    place('shrine', 82, 50, 0, 0.9);
-
-    // --- Starter cluster around the spawn (scramble crossing crowd + vending)
-    const START = [-22, 22, -22, 22];
-    any(PEOPLE, 16, START, 0.9, 1.1, 12);
-    any(VENDING, 8, START, 0.95, 1.05, 12);
-    any('lantern', 6, START, 0.95, 1.05, 12);
-    any('bicycle', 4, START, 0.9, 1.1, 12);
-    any(['cat', 'cat2'], 5, START, 0.9, 1.1, 12);
-    any('bonsai', 4, START, 0.9, 1.1, 12);
-
-    // --- Small
-    any(VENDING, 115, ALL);
-    any(PEOPLE, 100, ALL);
-    any('bicycle', 60, ALL);
-    any('scooter', 25, ALL);
-    any('lantern', 100, ALL);
-    any(['cat', 'cat2'], 35, ALL);
-    any('bonsai', 65, ALL);
-    any('omamori', 30, ALL);
-    any(PEOPLE, 40, [PARK[0], PARK[1], PARK[2], PARK[3]], 0.9, 1.1, 12);
-    any(['bonsai', 'cat', 'cat2'], 12, [PARK[0], PARK[1], PARK[2], PARK[3]], 0.9, 1.1, 12);
+    // ---- pedestrians: strolling on the pavements and crossing the scramble; a few cats
+    let n = 0;
+    for (let tries = 0; n < 70 && tries < 600; tries++) {
+      const b = pick(blocks), sd = pick(SIDES);
+      const edge = sd.ax === 'z' ? (sd.side < 0 ? b.z0 : b.z1) : (sd.side < 0 ? b.x0 : b.x1);
+      if (Math.abs(edge) > 118 || (b.rail && sd.ax === 'z' && sd.side < 0)) continue;
+      const a = randRange(sd.ax === 'z' ? b.x0 + 2 : b.z0 + 2, sd.ax === 'z' ? b.x1 - 2 : b.z1 - 2);
+      const d = sd.side < 0 ? edge + 2.0 : edge - 2.0;
+      if (put(pick(PEOPLE), sd.ax === 'z' ? a : d, sd.ax === 'z' ? d : a, undefined, 1)) n++;
+    }
+    for (let i = 0; i < 12; i++) ctx.place(pick(PEOPLE), randRange(-12, 12), randRange(-12, 12), undefined, 1);
+    for (let i = 0; i < 14; i++) { const t = randRange(-55, 55); if (Math.abs(t) > 14) ctx.place(pick(PEOPLE), t, randRange(-6, 6), undefined, 1); }
+    for (let i = 0; i < 14; i++) put(pick(['cat', 'cat2']), randRange(-S + 6, S - 6), randRange(-S + 6, S - 6), undefined, 1);
   },
 };
