@@ -1,9 +1,10 @@
 // In-game DOM overlay: progress bar, size, timer, leaderboard, pause button/menu, respawn overlay, popups.
-export function createHUD(root, { onPause, onResume, onRestart, onMenu }) {
+export function createHUD(root, { onPause, onResume, onRestart, onMenu, onZoomIn, onZoomOut, onFitView }) {
   root.innerHTML = `
     <div class="hud hidden">
       <div class="hud-tl">
         <div class="hud-map"></div>
+        <div class="hud-test-label hidden">Test Mode</div>
         <div class="hud-progress"><div class="hud-fill"></div><div class="hud-goal"></div><span class="hud-pct"></span></div>
         <div class="hud-sizebox">
           <div class="hud-size">Size <b>12</b></div>
@@ -22,6 +23,15 @@ export function createHUD(root, { onPause, onResume, onRestart, onMenu }) {
       </div>
       <div class="hud-popups"></div>
       <div class="hud-respawn hidden"><div><h2>Swallowed!</h2><p>Respawning&hellip;</p></div></div>
+      <div class="hud-viewer hidden">
+        <div class="hud-viewer-controls" role="group" aria-label="Map viewer controls">
+          <button class="viewer-button viewer-zoom" data-view="in" aria-label="Zoom in" title="Zoom in">+</button>
+          <button class="viewer-button viewer-zoom" data-view="out" aria-label="Zoom out" title="Zoom out">&minus;</button>
+          <button class="viewer-button" data-view="fit">Fit map</button>
+          <button class="viewer-button" data-view="menu">Main Menu</button>
+        </div>
+        <p class="hud-viewer-hint">Drag / WASD / arrows to pan &middot; N/M, +/&minus; or wheel to zoom</p>
+      </div>
       <div class="pause-menu hidden">
         <div class="panel">
           <h2>Paused</h2>
@@ -33,6 +43,7 @@ export function createHUD(root, { onPause, onResume, onRestart, onMenu }) {
     </div>`;
   const $ = (s) => root.querySelector(s);
   const el = {
+    viewer: $('.hud-viewer'), testLabel: $('.hud-test-label'),
     hud: $('.hud'), map: $('.hud-map'), fill: $('.hud-fill'), goal: $('.hud-goal'), pct: $('.hud-pct'),
     progress: $('.hud-progress'), lvl: $('.hud-lvl'), lvlFill: $('.hud-lvl i'), size: $('.hud-size b'), timer: $('.hud-timer'), gains: $('.hud-gains'), arcade: $('.hud-arcade'), score: $('.hud-score b'),
     combo: $('.hud-combo'), comboText: $('.hud-combo span'), comboBar: $('.hud-combobar i'), board: $('.hud-board'),
@@ -45,6 +56,16 @@ export function createHUD(root, { onPause, onResume, onRestart, onMenu }) {
 
   el.pbtn.addEventListener('click', (e) => { e.stopPropagation(); onPause(); });
   el.pbtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+  el.viewer.addEventListener('pointerdown', (e) => e.stopPropagation());
+  el.viewer.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const action = e.target.closest('[data-view]')?.dataset.view;
+    if (action === 'in') onZoomIn?.();
+    else if (action === 'out') onZoomOut?.();
+    else if (action === 'fit') onFitView?.();
+    else if (action === 'menu') onMenu();
+  });
+  el.pause.addEventListener('pointerdown', (e) => e.stopPropagation());
   el.pause.addEventListener('click', (e) => {
     const a = e.target.closest('[data-a]')?.dataset.a;
     if (a === 'resume') onResume();
@@ -54,7 +75,15 @@ export function createHUD(root, { onPause, onResume, onRestart, onMenu }) {
 
   return {
     show(map, mode) {
+      const test = mode === 'test';
       el.hud.classList.remove('hidden');
+      el.hud.classList.toggle('test-mode', test);
+      el.viewer.classList.toggle('hidden', !test);
+      el.testLabel.classList.toggle('hidden', !test);
+      el.timer.classList.add('hidden');
+      el.pause.classList.add('hidden');
+      el.respawn.classList.add('hidden');
+      el.popups.innerHTML = '';
       el.map.textContent = `${map.emoji || ''} ${map.name}`;
       el.progress.classList.toggle('hidden', mode === 'time');
       el.arcade.classList.toggle('hidden', mode !== 'arcade');

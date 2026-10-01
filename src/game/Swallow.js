@@ -1,11 +1,50 @@
 // Swallow eligibility, fall / wobble animation, hole-vs-hole.
 import * as THREE from 'three';
+import { objectMaterial, applyObjectSurfaces } from '../objects/build.js';
+import { markSolid } from './Hole.js';
 
 const GRAVITY = 30;
 const _q = new THREE.Quaternion();
 const _axis = new THREE.Vector3();
 const _yawQ = new THREE.Quaternion();
 const _up = new THREE.Vector3(0, 1, 0);
+
+// Falling objects get a temporary transparent clone of the shared object material so they can fade + darken as
+// they sink. Clones are pooled (reset on release); Game calls disposeFallMaterials() when a world is torn down.
+const MAX_FALL_MATS = 64;
+let fallPool = [];
+let fallInUse = 0;
+const allFallMats = new Set();
+
+function acquireFallMaterial() {
+  if (fallInUse >= MAX_FALL_MATS) return null; // absurd pile-up: fall back to the plain (non-fading) tip-and-drop
+  let m = fallPool.pop();
+  if (!m) {
+    m = applyObjectSurfaces(objectMaterial.clone());
+    m.transparent = true;
+    markSolid(m); // clone() copies stencil state already; keep explicit
+    allFallMats.add(m);
+  }
+  m.opacity = 1;
+  m.color.setScalar(1);
+  fallInUse++;
+  return m;
+}
+
+function releaseFallMaterial(o) {
+  const m = o.fallMat;
+  if (!m) return;
+  o.fallMat = null;
+  fallInUse--;
+  fallPool.push(m);
+}
+
+export function disposeFallMaterials() {
+  for (const m of allFallMats) m.dispose();
+  allFallMats.clear();
+  fallPool = [];
+  fallInUse = 0;
+}
 
 /** Object states */
 export const IDLE = 0, FALLING = 1, WOBBLE = 2, GONE = 3;
@@ -32,7 +71,14 @@ export function startFall(game, o, hole) {
   if (o.mv) game.movers.remove(o);
   _yawQ.setFromAxisAngle(_up, o.yaw);
   o.yawQ = _yawQ.clone();
+  const mesh = game.instances.promote(o); // falling needs its own Mesh (fade material, tilt)
+  o.fallMat = acquireFallMaterial();
+  if (o.fallMat) {
+    mesh.material = o.fallMat;
+    mesh.receiveShadow = false;
+  }
   markActive(game, o);
+  game.effects?.swallow(o, hole);
 }
 
 /** Check nearby objects for one hole. */
@@ -49,6 +95,7 @@ export function swallowNear(game, hole) {
     } else if (o.state === IDLE && d < hole.r * 0.7) {
       o.state = WOBBLE;
       o.wobT = 0.6;
+      game.instances.promote(o);
       markActive(game, o);
     }
   }
@@ -77,10 +124,19 @@ export function updateActive(game, dt) {
       m.quaternion.copy(_q).multiply(o.yawQ);
       m.position.set(o.x, o.y, o.z);
       m.updateMatrix();
-      if (o.y < -o.h - 2) {
+      // Sink progress 0..1: fade + darken as the object drops into the dark pit.
+      const sinkLen = o.h * 0.85 + 1.4;
+      const s = Math.max(0, Math.min(1, (-o.y - o.h * 0.15) / sinkLen));
+      if (o.fallMat) {
+        o.fallMat.opacity = 1 - s * s;
+        o.fallMat.color.setScalar(1 - s * 0.9);
+      }
+      if (m.castShadow && o.y < -0.3) m.castShadow = false;
+      if (s >= 1 || o.y < -o.h - 4) {
         o.state = GONE;
-        game.scene.remove(m);
+        releaseFallMaterial(o);
         game.onSwallowed(o);
+        game.instances.release(o);
         done = true;
       }
     } else if (o.state === WOBBLE) {
@@ -93,6 +149,7 @@ export function updateActive(game, dt) {
         o.state = IDLE;
         m.rotation.set(0, o.yaw, 0);
         m.updateMatrix();
+        game.instances.demote(o); // back into its instance batch (no-op for movers / faded objects)
         done = true;
       }
     } else {

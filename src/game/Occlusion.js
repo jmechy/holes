@@ -1,7 +1,8 @@
 // Fades objects that stand between the camera and the player's hole (tall city buildings).
 // Occluders swap to ONE shared translucent material and back to the shared opaque one when clear.
 import * as THREE from 'three';
-import { objectMaterial, objectMaterialHigh } from '../objects/build.js';
+import { objectMaterial, objectMaterialHigh, applyObjectSurfaces } from '../objects/build.js';
+import { FALLING, GONE } from './Swallow.js';
 
 export class Occlusion {
   constructor(game, high = true) {
@@ -14,6 +15,7 @@ export class Occlusion {
     this.material = high
       ? new THREE.MeshStandardMaterial({ ...fade, roughness: objectMaterialHigh.roughness, metalness: objectMaterialHigh.metalness })
       : new THREE.MeshLambertMaterial(fade);
+    applyObjectSurfaces(this.material);
   }
 
   update() {
@@ -55,9 +57,11 @@ export class Occlusion {
           }
           if (!hit) continue;
           o.occF = frame;
-          if (o.mesh.material !== this.material) {
-            o.mesh.material = this.material;
-            o.mesh.receiveShadow = false; // translucent + self-shadowing looks like stripes
+          if (!o.fading) {
+            const mesh = g.instances.promote(o); // the fade material needs an individual Mesh
+            mesh.material = this.material;
+            mesh.receiveShadow = false; // translucent + self-shadowing looks like stripes
+            o.fading = true;
             this.faded.push(o);
           }
         }
@@ -67,8 +71,12 @@ export class Occlusion {
     for (let i = f.length - 1; i >= 0; i--) {
       const o = f[i];
       if (o.occF === frame) continue;
-      o.mesh.material = objectMaterial;
-      o.mesh.receiveShadow = this.receive;
+      o.fading = false;
+      if (o.mesh && o.state !== FALLING && o.state !== GONE) { // a falling object owns its own fading material now
+        o.mesh.material = objectMaterial;
+        o.mesh.receiveShadow = this.receive;
+        this.game.instances.demote(o);
+      }
       f[i] = f[f.length - 1];
       f.pop();
     }
@@ -76,6 +84,7 @@ export class Occlusion {
 
   dispose() {
     this.material.dispose();
+    for (const o of this.faded) o.fading = false;
     this.faded.length = 0;
   }
 }

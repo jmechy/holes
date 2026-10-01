@@ -21,11 +21,18 @@ export default {
   size: 120,
   groundColor: '#8a7a5a',
   skyColor: '#bfe3ff',
-  fogColor: '#bfe3ff',
+  fogColor: '#e4dcc4', // dusty haze
   lightColor: '#fff4d6',
   ambient: 0.6,
+  // Warm late-morning sun through a light dusty haze.
+  lighting: {
+    sunDirection: [-45, 62, 30], sunColor: '#ffe6b8', sunIntensity: 0.76 * Math.PI,
+    hemiSkyColor: '#e2e6dc', hemiGroundColor: '#9c8560', hemiIntensity: 0.58 * Math.PI,
+    shadowOpacity: 0.72, shadowRadius: 3.0, environmentIntensity: 0.26, exposure: 1.04,
+  },
+  postProcessing: { aoRadius: 0.55, aoStrength: 0.17 },
   groundStyle: 'dirt',
-  sky: { top: '#7fb6ec', horizon: '#d9ecfb' },
+  sky: { top: '#86b9e6', horizon: '#eadfc6' },
   clouds: true,
   backdrop: [
     { type: 'hills', color: '#a39a6a', color2: '#8fa06e' },
@@ -72,9 +79,9 @@ export default {
       rect(35, 75, S * 2 - 70, 8),
     ]), ASPHALT, { style: 'asphalt' });
     // road shoulders (worn gravel edges)
-    addDecal(merge([
-      rect(0, -6.8, S * 2, 1.2), rect(0, 6.8, S * 2, 1.2),
-    ]), '#8b826a', { style: 'dirt' });
+    const sh = [];
+    for (const [x0, x1] of [[-S, -55], [-45, 55], [65, S]]) for (const z of [-6.8, 6.8]) sh.push(rect((x0 + x1) / 2, z, x1 - x0, 1.2)); // gaps at the two N-S roads
+    addDecal(merge(sh), '#8b826a', { style: 'dirt' });
     // manhole covers
     const mh = [[-20, 3], [25, -3], [-50, 30], [60, -30], [60, 50], [-50, -30], [-75, -55], [80, 75]];
     addDecal(merge(mh.map(([x, z]) => circle(x, z, 0.9, 14))), '#3b3d41');
@@ -94,8 +101,8 @@ export default {
     addDecal(merge(dashes), YELLOW);
 
     // Site parking lots (stall lines drawn by the engine) + machinery depot bays
-    LOT_NE = ctx.parkingLot(85, -88, 50, 34, { rotY: 0 });
-    LOT_OFFICE = ctx.parkingLot(104, 36, 20, 30, { rotY: 0 });
+    LOT_NE = ctx.parkingLot(85, -88, 50, 34, { rotY: 0, color: '#5b5e63' });
+    LOT_OFFICE = ctx.parkingLot(104, 36, 20, 30, { rotY: 0, color: '#5b5e63' });
     const bays = [];
     for (let i = 0; i <= 7; i++) bays.push(rect(-106 + i * 7, -40, 0.25, 11), rect(-106 + i * 7, -20, 0.25, 11));
     addDecal(merge(bays), WHITE);
@@ -133,7 +140,16 @@ export default {
   },
 
   populate(ctx) {
-    const { place, randRange, rand, size: S } = ctx;
+    const { randRange, rand, size: S } = ctx;
+    // static props stay off the asphalt (movers may cross it); the road rectangles match decorate()
+    const onRoad = (x, z, m) => Math.abs(z) < 6 + m || Math.abs(x + 50) < 5 + m || Math.abs(x - 60) < 5 + m
+      || (x < 60 + m && Math.abs(z + 55) < 4 + m) || (x > -50 - m && Math.abs(z - 75) < 4 + m);
+    const place = (n, x, z, rot, sc = 1, opts) => {
+      const proto = ctx.protos[n];
+      const isStatic = opts && 'move' in opts ? !opts.move : proto && !proto.move;
+      if (isStatic && onRoad(x, z, (proto ? proto.radius * sc : 0) * 0.6)) return false;
+      return ctx.place(n, x, z, rot, sc, opts);
+    };
     const scatter = (name, n, [x0, x1, z0, z1], sMin = 1, sMax = 1, tries = 30) => {
       for (let i = 0; i < n; i++) {
         for (let t = 0; t < tries; t++) {
@@ -157,15 +173,15 @@ export default {
 
     // --- Big vehicles
     // Mixers, dump trucks and pickups drive the yard roads
-    const drive = (name, key, count, speed, offset = 2.5) =>
+    const drive = (name, key, count, speed, offset = 2) => // 3.8-wide trucks must stay on the 8-wide roads
       ctx.placeOnRoute(name, R[key], { count, speed, offset, speedJitter: 0.2 });
     for (const d of ['F', 'R']) {
       drive('mixer', 'a' + d, 1, 5);
       drive('dumptruck', 'a' + d, 1, 4.5);
-      drive('pickup', 'a' + d, 1, 6, 4);
+      drive('pickup', 'a' + d, 1, 6);
       drive('mixer', 'b' + d, 1, 5);
       drive('dumptruck', 'b' + d, 1, 4.5);
-      drive('pickup', 'b' + d, 1, 6, 4);
+      drive('pickup', 'b' + d, 1, 6);
     }
     drive('mixer', 'w', 1, 4.5);
     drive('dumptruck', 'e', 1, 4);

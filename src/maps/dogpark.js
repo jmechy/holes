@@ -26,6 +26,13 @@ export default {
   fogColor: '#c4ecff',
   lightColor: '#fffbe6',
   ambient: 0.65,
+  // Warm sunny park afternoon: golden sun from the west, fresh blue-green sky fill, soft grounded shadows.
+  lighting: {
+    sunDirection: [-45, 58, 30], sunColor: '#fff0cc', sunIntensity: 0.76 * Math.PI,
+    hemiSkyColor: '#bfe6ff', hemiGroundColor: '#7fa85a', hemiIntensity: 0.6 * Math.PI,
+    shadowOpacity: 0.72, shadowRadius: 3.0, environmentIntensity: 0.26, exposure: 1.03,
+  },
+  postProcessing: { aoRadius: 0.42, aoStrength: 0.15 },
   groundStyle: 'grass',
   edge: 'hedge',
   sky: { top: '#5aaef5', horizon: '#c9efff' },
@@ -51,12 +58,12 @@ export default {
     for (let t = -S; t < S; t += step) {
       const x0 = pathX(t), z0 = pathZ(t), x1 = pathX(t + step), z1 = pathZ(t + step);
       const rot = -Math.atan2(z1 - z0, x1 - x0);
-      segs.push(rect((x0 + x1) / 2, (z0 + z1) / 2, step + 1.2, 6, rot));
+      segs.push(rect((x0 + x1) / 2, (z0 + z1) / 2, Math.hypot(x1 - x0, z1 - z0) + 1.2, 6, rot));
     }
     for (let t = -S; t < S; t += step) {
       const x0 = 40 * Math.sin(t / 25) - 20, x1 = 40 * Math.sin((t + step) / 25) - 20;
       const rot = -Math.atan2(step, x1 - x0);
-      segs.push(rect((x0 + x1) / 2, t + step / 2, step + 1.2, 5, rot));
+      segs.push(rect((x0 + x1) / 2, t + step / 2, Math.hypot(x1 - x0, step) + 1.2, 5, rot));
     }
     addDecal(merge(segs), '#c9bfa8', { style: 'sand' });
 
@@ -64,7 +71,7 @@ export default {
     const mainPts = [], crossPts = [];
     for (let t = -S + 12; t <= S - 12; t += 6) {
       mainPts.push([pathX(t), pathZ(t)]);
-      crossPts.push([40 * Math.sin(t / 25) - 20, t]);
+      if (t <= 90) crossPts.push([40 * Math.sin(t / 25) - 20, t]); // stops short of the fenced agility area
     }
     routeMain = ctx.addRoute(mainPts, { loop: false, width: 3 });
     routeCross = ctx.addRoute(crossPts, { loop: false, width: 3 });

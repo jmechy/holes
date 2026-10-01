@@ -12,6 +12,9 @@ export class Input {
     this.sx = 0; this.sy = 0;
     this.jx = 0; this.jz = 0;
     this.onPause = onPause;
+    this.zoom = 1; // camera distance multiplier (hidden N / M shortcut), session only
+    this.testMode = false;
+    this.onTestZoom = null;
 
     this.base = document.createElement('div');
     this.base.className = 'joy-base';
@@ -29,6 +32,12 @@ export class Input {
     window.addEventListener('keyup', (e) => this.key(e, false));
     canvas.addEventListener('lostpointercapture', (e) => this.up(e));
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    canvas.addEventListener('wheel', (e) => {
+      if (!this.enabled || !this.testMode || e.ctrlKey || e.metaKey) return;
+      e.preventDefault();
+      const delta = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1);
+      this.onTestZoom?.(Math.exp(Math.max(-0.4, Math.min(0.4, delta * 0.0015))));
+    }, { passive: false });
     // Stop Safari pinch / scroll / rubber-banding.
     ['gesturestart', 'gesturechange', 'gestureend'].forEach((n) => document.addEventListener(n, (e) => e.preventDefault()));
     document.addEventListener('touchmove', (e) => { if (e.target === canvas) e.preventDefault(); }, { passive: false });
@@ -38,6 +47,11 @@ export class Input {
     this.enabled = v;
     this.release(); // never carry a stale pointer across pause/resume
     if (!v) this.keys.clear();
+  }
+
+  setTestMode(v, onZoom = null) {
+    this.testMode = v;
+    this.onTestZoom = v ? onZoom : null;
   }
 
   down(e) {
@@ -79,6 +93,16 @@ export class Input {
     if (down && k === 'escape') {
       if (!e.repeat) this.onPause?.();
       return;
+    }
+    if (down && this.enabled && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const zoomIn = k === 'n' || (this.testMode && (k === '+' || k === '='));
+      const zoomOut = k === 'm' || (this.testMode && (k === '-' || k === '_'));
+      if (zoomIn || zoomOut) {
+        const factor = zoomIn ? 1 / 1.15 : 1.15;
+        if (this.testMode) { e.preventDefault(); this.onTestZoom?.(factor); }
+        else this.zoom = Math.max(0.5, Math.min(2.5, this.zoom * factor));
+        return;
+      }
     }
     if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) {
       if (this.enabled) e.preventDefault();

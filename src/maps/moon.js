@@ -17,6 +17,13 @@ export default {
   fogColor: '#0a0f26',
   lightColor: '#f2f4ff',
   ambient: 0.55,
+  // Stark low sun: long crisp shadows, cool sky-tinted fill, but bright enough to stay kid-friendly.
+  lighting: {
+    sunDirection: [-62, 34, 30], sunColor: '#fff3de', sunIntensity: 0.84 * Math.PI,
+    hemiSkyColor: '#7b8fd6', hemiGroundColor: '#4a4a66', hemiIntensity: 0.4 * Math.PI,
+    shadowOpacity: 0.93, shadowRadius: 1.3, environmentIntensity: 0.3, exposure: 0.94,
+  },
+  postProcessing: { aoRadius: 0.55, aoStrength: 0.22 },
   groundStyle: 'regolith',
   stars: true,
   sky: { top: '#010208', horizon: '#0b1030' },
@@ -160,7 +167,7 @@ export default {
     scatter('fuelTank', 10, ALL);
     scatter('dish', 16, ALL);
     // supply rovers shuttle along the painted tracks (2 per track, staggered)
-    routeList.forEach((r) => ctx.placeOnRoute('rover', r, { count: 2, speed: 4, offset: 1.6, speedJitter: 0.1 }));
+    routeList.forEach((r) => ctx.placeOnRoute('rover', r, { count: 2, speed: 4, offset: 1.25, speedJitter: 0.1 }));
     scatter('rover', 3, [-100, 100, -20, 30], 0.95, 1.05);
     scatter('solarPanel', 26, BASE);
     scatter('solarPanel', 18, ALL);

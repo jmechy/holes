@@ -102,7 +102,7 @@
  *          { move: null }                                   make it static even if the proto walks.
  *        STATIC (non-mover) objects are also REJECTED (return false) if their footprint circle touches a route
  *        corridor: distance(centre, route polyline) < radius*scale + route.width/2. Movers are exempt.
- *   addRoute(points, { loop=true, width=4 }) -> route
+ *   addRoute(points, { loop=true, width=4, network='road' }) -> route
  *        points = [[x,z],...] world coords (>= 2), a polyline; loop:true closes it back to the first point.
  *        width = corridor width kept clear of static objects. Returns an opaque route handle. It draws nothing:
  *        paint the road yourself with addDecal. MUST be called in decorate() (or at least before any place()),
@@ -111,9 +111,10 @@
  *        Call from populate(). Places `count` instances evenly spaced along the route (random phase on loops)
  *        that drive it forever facing travel direction (+X of the model is forward), cutting corners smoothly.
  *        offset = lateral lane offset from the centreline, positive = RIGHT of the travel direction.
- *        speedJitter = +-fraction randomising each vehicle's speed (0.2 -> +-20%). Non-loop routes ping-pong
- *        (U-turn at each end). Skips the overlap test, but instances inside the 5-unit spawn exclusion or outside
- *        the map bounds are skipped (the return value counts only those actually placed).
+ *        speedJitter = +-fraction randomising each vehicle's speed (0.2 -> +-20%). Open roads prefer connected
+ *        roads at endpoints, with U-turns where no continuation fits. Set network='water'|'air'|'rail' to keep
+ *        non-road traffic on its original path. Spawns retry for vehicle clearance and obey the 5-unit spawn
+ *        exclusion/map bounds. Traffic brakes and yields for other vehicles while maintaining lane footprints.
  *   addDecal(geometry,color,{ style }?) -> Mesh
  *        geometry must already be in WORLD coordinates lying flat at y=0. Rendered at y ~= 0.01 (each call
  *        stacks 0.002 higher so later decals draw over earlier ones) with a lit, shadow-receiving material hidden
@@ -144,6 +145,49 @@
  *          populate(ctx) { LOT.forEach(s => ctx.rand() < 0.7 && ctx.placeParked(ctx.pick(['car','carBlue']), s));
  *                          SIDE.forEach(s => ctx.placeParked('car', s)); }
  *
+ * Visual finishing (Rome-style)  -- optional, opt-in per map; see src/maps/rome.js + src/objects/rome.js
+ *   Map fields:
+ *     lighting?: { sunDirection:[x,y,z], sunColor, sunIntensity (~0.72*PI), hemiSkyColor, hemiGroundColor,
+ *                  hemiIntensity (~0.6*PI), shadowOpacity (1), shadowRadius (2.5), environmentIntensity (0.3),
+ *                  exposure (0.95) }   every field optional (defaults derived from skyColor/groundColor/ambient).
+ *     postProcessing?: { aoRadius: 0.1-1.2 (0.45), aoStrength: 0-0.3 (0.16),
+ *                        bloom?: { strength 0-3 (0.35), radius 0-1 (0.6), threshold (1.0) } | false }
+ *         depth AO + bloom + FXAA, High graphics only. Bloom is a cheap HDR pass (1/4-res chain, runs before tone mapping):
+ *         it is ON by default and subtle; only pixels brighter than `threshold` (emissive parts, strong speculars) glow,
+ *         ordinary lit surfaces stay below 1.0. `bloom: false` disables it; omit fields to keep the defaults.
+ *   Per-primitive `emissive: true | 0-3` opt (any primitive in build.js): the part shows its own vertex colour regardless of
+ *     lighting (radiance = colour * strength * 1.8, HDR so it feeds bloom). ~1 = lit lamp / window, 1.3-2 = neon, flames, beacons.
+ *     Stored per vertex (`glow` attribute; makeProto adds 0 for parts built elsewhere, e.g. glTF), survives merging, is excluded from
+ *     baked AO darkening, and works in both High and Low materials (and fall/fade clones). To mark helper output built elsewhere:
+ *     emissiveParts(parts, strength, color?) (build.js) sets it on existing parts, optionally only those of a given colour.
+ *   Per-primitive `surface: 'name'` opt (+ optional textureStrength, textureRotation) selects a procedural detail
+ *   texture baked into vertex attributes. Names (TEXTURE_LAYERS in src/objects/TextureLibrary.js):
+ *     stone stucco brick roof wood metal rubber fabric foliage paint glass   (none = default)
+ *   applyModelFinishes(proto, profile) (src/objects/ModelFinishes.js) sets per-surface [roughness, metalness] on the
+ *   merged proto without extra draw calls. Profiles: 'rome' 'coastal' (default) 'urban' 'industrial' 'park' 'lunar'
+ *   'voxel'. Call it on every proto, e.g. wrap `add` inside buildProtos():
+ *     const P = {}, add = (name, parts, opts = {}) => {
+ *       P[name] = applyModelFinishes(makeProto(name, parts, opts), 'urban');
+ *     };
+ *   articulate(geometry, kind, pivot, opts) (build.js) marks a part of a MOVER proto for rigid animation; the part's
+ *   vertices rotate about `pivot` (proto-local, pre-recentring coords; makeProto re-offsets). Models face +X.
+ *     'wheel'  opts { radius, front }     rolls with travel; front wheels also steer.
+ *     'leg'    opts { side: +-1, hip }    swings about pivot; side flips the phase (biped: sides alternate).
+ *     'shin'   opts { side, hip }         pivot = knee, hip = hip pos; flexes at the knee and follows the thigh.
+ *     'arm'    opts { side }              swings opposite the legs.
+ *     Quadrupeds: give leg/shin parts `phase: 0|1` INSTEAD of side. Diagonal pairs share a phase:
+ *       front-left + back-right = 0, front-right + back-left = 1 (the pairs swing in anti-phase).
+ *     'tail'   opts { amp? (1) }          gentle side-to-side wag about the vertical axis through pivot; wags faster
+ *                                         while walking. Only animates once the mover has walked.
+ *   Ambient sway: makeProto(name, parts, { sway: 'tree' | 'boat' }) makes static instances gently rock (trees/boats).
+ *     Without the flag, legacy proto names (umbrellaPine, cypress, tree, palm*, oak*, gondola, sailboat...) still sway.
+ *     Protos with windStart (vertex wind) skip tree sway.
+ *   Facade helpers (src/objects/ModelDetails.js):
+ *     facadeWall(w, h, thickness, color, openings = [{x,y,width,height}], opts {ry,x,y,z}) -> parts[]
+ *         wall centred on X/Z, Y from its base, with real openings cut out (spread the array into makeProto parts).
+ *     recessedWindow(w, h, depth, opts {frame, frameColor, glassColor, mullion, x,y,z,ry}) -> parts[]
+ *         inset frame + glass pane + sill, window centred on Y, front face at local Z=0; put it in a facadeWall opening.
+ *
  * Graphics setting (Settings -> Graphics High/Low, default High, persisted): High = pixel ratio min(dpr,2), 2048 PCF
  * sun shadows, Standard object material, procedural ground/water detail, cloud shadows; Low = pixel ratio 1.25,
  * no shadows, Lambert, fewer clouds/stars. Maps do not need to care.
@@ -162,6 +206,9 @@ import airport from './airport.js';
 import paris from './paris.js';
 import tokyo from './tokyo.js';
 import santabarbara from './santabarbara.js';
+import venice from './venice.js';
+import rome from './rome.js';
+import neighborhood from './neighborhood.js';
 
-export const MAPS = [construction, firestation, minecraft, dogpark, airport, paris, tokyo, newyork, santabarbara, moon];
+export const MAPS = [construction, firestation, minecraft, dogpark, airport, paris, tokyo, newyork, santabarbara, moon, venice, rome, neighborhood];
 export default MAPS;

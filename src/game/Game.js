@@ -1,13 +1,22 @@
 import * as THREE from 'three';
 import { createGround, makeDecalMaterial, holeUniforms, timeUniform, setGroundQuality, MAX_HOLES } from './Ground.js';
-import { Scenery } from './Scenery.js';
-import { Hole, PLAYER_COLOR } from './Hole.js';
+import { Scenery, edgeHoleUniform, applyHoleDiscard } from './Scenery.js';
+import { Hole, PLAYER_COLOR, markSolid, setHoleTint } from './Hole.js';
+import { Effects } from './Effects.js';
 import { SpatialGrid, CELL } from './SpatialGrid.js';
 import { AI } from './AI.js';
-import { swallowNear, updateActive, holeVsHole, IDLE, FALLING } from './Swallow.js';
+import { swallowNear, updateActive, holeVsHole, disposeFallMaterials, IDLE, FALLING } from './Swallow.js';
 import { Movers, createRoute, routePointAt, routeDistance } from './Movers.js';
 import { Occlusion } from './Occlusion.js';
-import { objectMaterial, setObjectQuality } from '../objects/build.js';
+import { animateModels, disposeModelAnimation } from './ModelAnimation.js';
+import { EnvironmentAnimation } from './EnvironmentAnimation.js';
+import { createSkyEnvironment, getLightingConfig } from './Lighting.js';
+import { MapPostProcessing } from './RomePostProcessing.js';
+import { ContactShadows } from './ContactShadows.js';
+import { BoatWakes } from './BoatWakes.js';
+import { Instancing, InstanceLOD } from './Instancing.js';
+import { AdaptiveQuality } from './AdaptiveQuality.js';
+import { objectMaterial, objectMaterialHigh, objectMaterialLow, modelTimeUniform, setObjectQuality } from '../objects/build.js';
 import { getSettings } from '../settings.js';
 import { audio } from '../audio.js';
 
@@ -21,7 +30,7 @@ const SUN_RIGHT = new THREE.Vector3().crossVectors(SUN_DIR.clone().negate(), new
 const SUN_UP = new THREE.Vector3().crossVectors(SUN_RIGHT, SUN_DIR.clone().negate()).normalize();
 const SHADOW_MAP = 2048;
 const SHADOW_MIN_H = 0.6; // objects shorter than this don't cast shadows
-const arcadeGain = (value) => Math.min(8, Math.max(0.12, 0.12 + value * 0.35));
+const arcadeGain = (value) => Math.min(4, Math.max(0.06, 0.06 + value * 0.175));
 const SPAWN_CLEAR = 5; // no objects placed within this distance of the player spawn (0,0)
 const CAM_ANGLE = (62 * Math.PI) / 180;
 const STALL_SECONDS = 45; // 'all items' goal: give up when this long passes with nothing swallowed near the end
@@ -52,11 +61,13 @@ export class Game {
     this.canvas = canvas;
     this.hud = hud;
     this.input = input;
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, stencil: true, powerPreference: 'high-performance' });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 0.95;
     this.renderer.shadowMap.type = THREE.PCFShadowMap; // PCFSoftShadowMap was removed in three r186
+    markSolid(objectMaterialHigh);
+    markSolid(objectMaterialLow);
     this.high = true;
     this.time = 0;
     this.shadowHalf = 0;
@@ -82,14 +93,47 @@ export class Game {
     requestAnimationFrame((t) => this.loop(t));
   }
 
-  /** Applies the Graphics setting (High / Low). Called on every game start. */
+  /** Applies the Graphics setting (Auto / High / Low). Called on every game start. Auto builds High and adapts live. */
   applyQuality() {
-    const high = (this.high = getSettings().graphics !== 'low');
+    const mode = getSettings().graphics;
+    const high = (this.high = mode !== 'low');
     const r = this.renderer;
-    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, high ? 2 : 1.25));
+    this.adaptive = mode === 'low' || mode === 'high' ? null : (this.adaptive || new AdaptiveQuality(this));
+    const cap = high ? 2 : 1.25;
+    this.shadowsOn = high;
+    this.postOn = true;
+    this.shadowRate = 2; // the sun shadow map re-renders every `shadowRate` frames
+    this.shadowSize = SHADOW_MAP;
+    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, cap));
     r.shadowMap.enabled = high;
-    setObjectQuality(high);
+    setObjectQuality(high, r);
     this.resize();
+  }
+
+  /** Adaptive-quality knobs applied to the live world (see AdaptiveQuality). Safe to call repeatedly. */
+  setDynamicQuality({ post, shadowRate, shadowSize, pixelRatio, shadows }) {
+    this.postOn = post;
+    this.shadowRate = shadowRate;
+    const r = this.renderer;
+    const pr = Math.min(window.devicePixelRatio || 1, pixelRatio);
+    if (r.getPixelRatio() !== pr) { r.setPixelRatio(pr); this.resize(); }
+    if (shadowSize !== this.shadowSize) {
+      this.shadowSize = shadowSize;
+      const sh = this.sun?.shadow;
+      if (sh) {
+        sh.mapSize.set(shadowSize, shadowSize);
+        sh.dispose();
+        sh.map = null;
+        this.shadowHalf = 0; // recompute texel size / snapping
+      }
+    }
+    if (shadows !== this.shadowsOn) {
+      this.shadowsOn = shadows;
+      r.shadowMap.enabled = shadows && this.high;
+      if (this.sun) this.sun.castShadow = shadows && this.high;
+      for (const m of [objectMaterial, this.instances?.material]) if (m) m.needsUpdate = true;
+      this.scene?.traverse((o) => { if (o.material && !Array.isArray(o.material)) o.material.needsUpdate = true; });
+    }
   }
 
   resize() {
@@ -97,18 +141,31 @@ export class Game {
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    this.postProcessing?.setSize(w, h);
+    if (this.scene && this.testView && this.opts.mode === 'test') {
+      if (this.testView.overview) this.fitTestView();
+      else {
+        this.testView.fit = this.testFitDistance();
+        this.testView.d = Math.min(this.testView.d, this.testView.fit * 2.5);
+        this.updateCamera(0, true);
+        this.scenery.update(0, this.camera, this.time);
+        this.updateShadow();
+      }
+    }
   }
 
   // ---- lifecycle ----------------------------------------------------------
 
-  /** opts: { mode: 'adventure'|'pick'|'time'|'arcade', goal, rivals, rivalCount } */
+  /** opts: { mode: 'adventure'|'pick'|'time'|'arcade'|'test', goal, rivals, rivalCount } */
   start(map, opts) {
+    this.disposeWorld();
     this.map = map;
     this.opts = opts;
     this.applyQuality();
-    this.disposeWorld();
     this.buildWorld();
+    this.adaptive?.onWorld();
     this.state = 'playing';
+    this.input.setTestMode(opts.mode === 'test', (factor) => this.zoomTestView(factor));
     this.input.setEnabled(true);
     this.hud.show(map, opts.mode);
     this.hud.showPause(false);
@@ -123,6 +180,7 @@ export class Game {
   stop() {
     this.state = 'idle';
     this.input.setEnabled(false);
+    this.input.setTestMode(false);
     this.disposeWorld();
     this.hud.hide();
   }
@@ -147,19 +205,46 @@ export class Game {
   }
 
   disposeWorld() {
-    if (this.protos) Object.values(this.protos).forEach((p) => p.geometry.dispose());
+    this.effects?.dispose();
+    this.effects = null;
+    this.boatWakes?.dispose();
+    this.boatWakes = null;
+    this.modelLOD?.dispose();
+    this.modelLOD = null;
+    this.postProcessing?.dispose();
+    this.postProcessing = null;
+    this.contactShadows?.dispose();
+    this.contactShadows = null;
+    this.environmentAnimation?.dispose();
+    this.environmentAnimation = null;
+    this.environmentMap?.dispose();
+    this.environmentMap = null;
+    this.sun?.shadow.dispose(); // frees the shadow map render target (was leaking 2 textures per restart)
+    this.sun = null;
+    this.objects?.forEach(disposeModelAnimation);
+    this.instances?.dispose();
+    this.instances = null;
+    if (this.protos) Object.values(this.protos).forEach((p) => {
+      p.geometry.dispose();
+      p.geometryFar?.dispose();
+    });
     if (this.staticGroup) {
       this.staticGroup.traverse((o) => {
         if (o.geometry) o.geometry.dispose();
         if (o.material) o.material.dispose();
+        if (o.isInstancedMesh) o.dispose(); // frees the instance matrix / colour buffers
       });
     }
     this.holes.forEach((h) => h.dispose());
+    disposeFallMaterials();
     this.occlusion?.dispose();
     this.occlusion = null;
     this.movers = null;
     this.routes = [];
     this.scene = null;
+    this.player = null;
+    this.testView = null;
+    this.scenery = null;
     this.protos = null;
     this.staticGroup = null;
     this.holes = [];
@@ -177,36 +262,42 @@ export class Game {
     const S = (this.size = map.size);
     const scene = (this.scene = new THREE.Scene());
     const high = this.high;
-    setGroundQuality(high, map.clouds ?? !map.stars); // before any ground/decal/backdrop material is built
+    const lighting = getLightingConfig(map);
+    this.renderer.toneMappingExposure = lighting.exposure;
+    this.environmentMap = high ? createSkyEnvironment(this.renderer, map) : null;
+    scene.environment = this.environmentMap?.texture ?? null;
+    scene.environmentIntensity = lighting.environmentIntensity;
+    setGroundQuality(high, map.clouds ?? !map.stars, map.water); // before any ground/decal/backdrop material is built
     const sky = new Scenery(map, { high });
     this.scenery = sky;
     scene.background = sky.horizon.clone();
     scene.fog = new THREE.Fog(sky.horizon.clone(), 40, 300);
-    const amb = map.ambient ?? 0.6;
-    const hemiSky = new THREE.Color(map.skyColor).lerp(new THREE.Color(0xffffff), 0.55);
-    const hemiGround = new THREE.Color(map.groundColor).lerp(new THREE.Color(0xffffff), 0.3);
-    scene.add(new THREE.HemisphereLight(hemiSky, hemiGround, amb * Math.PI * 0.9));
-    const sun = (this.sun = new THREE.DirectionalLight(map.lightColor || 0xffffff, 0.76 * Math.PI));
+    scene.add(new THREE.HemisphereLight(lighting.hemiSkyColor, lighting.hemiGroundColor, lighting.hemiIntensity));
+    const sun = (this.sun = new THREE.DirectionalLight(lighting.sunColor, lighting.sunIntensity));
     sun.position.copy(SUN_DIR).multiplyScalar(200);
     scene.add(sun, sun.target);
     if (high) {
-      sun.castShadow = true;
-      sun.shadow.mapSize.set(SHADOW_MAP, SHADOW_MAP);
+      sun.castShadow = this.shadowsOn;
+      sun.shadow.mapSize.set(this.shadowSize, this.shadowSize);
       sun.shadow.bias = -0.0004;
-      sun.shadow.radius = 2.5;
+      sun.shadow.radius = lighting.shadowRadius;
+      sun.shadow.intensity = lighting.shadowOpacity;
       sun.shadow.autoUpdate = false; // re-rendered every other frame (see updateShadow)
       this.shadowHalf = 0;
     }
 
     const staticGroup = (this.staticGroup = new THREE.Group());
     staticGroup.add(sky.group);
-    staticGroup.add(createGround(map, sky.skirtColor));
+    const ground = createGround(map, sky.skirtColor);
+    if (ground.children[1]?.material) applyHoleDiscard(ground.children[1].material); // outer skirt (under the backdrop)
+    staticGroup.add(ground);
     scene.add(staticGroup);
 
     this.grid = new SpatialGrid(S, CELL);
     this.movers = new Movers(this);
+    this.instances = new Instancing(this, !(import.meta.env?.DEV && /[?&]noinstancing\b/.test(location.search)));
     this.routes = [];
-    this.occlusion = new Occlusion(this);
+    this.occlusion = this.opts.mode === 'test' ? null : new Occlusion(this, this.high);
     this.maxR = 1;
     const rand = mulberry32(hashSeed(map.id));
     let decalN = 0;
@@ -229,6 +320,12 @@ export class Game {
       addDecal: (geometry, color, dopts) => {
         const m = new THREE.Mesh(geometry, makeDecalMaterial(color, dopts?.style));
         m.position.y = 0.01 + decalN++ * 0.002;
+        if (this.opts.mode === 'test') {
+          // At overview distances the thin decal layers can share a depth value.
+          // Preserve their paint order while still testing against solid objects.
+          m.renderOrder = decalN * 0.001;
+          m.material.depthWrite = false;
+        }
         m.receiveShadow = high;
         staticGroup.add(m);
         return m;
@@ -246,17 +343,27 @@ export class Game {
     };
     map.decorate?.(ctx);
     map.populate(ctx);
+    this.instances.build();
+    this.environmentAnimation = new EnvironmentAnimation(this);
+    this.modelLOD = new InstanceLOD(this);
+    this.boatWakes = high && map.water?.wakes ? new BoatWakes(this) : null;
+    if (this.boatWakes) scene.add(this.boatWakes.mesh);
+    this.contactShadows = high ? new ContactShadows(this) : null;
+    if (this.contactShadows) scene.add(this.contactShadows.mesh);
     this.total = this.objects.length;
     this.removed = 0;
 
     // Holes
     this.holes = [];
     this.ais = [];
-    this.player = new Hole({ name: 'You', color: PLAYER_COLOR, isPlayer: true });
-    this.player.reset(0, 0, S);
-    this.holes.push(this.player);
-    scene.add(this.player.group);
-    if (this.opts.rivals) {
+    const test = this.opts.mode === 'test';
+    if (!test) {
+      this.player = new Hole({ name: 'You', color: PLAYER_COLOR, isPlayer: true });
+      this.player.reset(0, 0, S);
+      this.holes.push(this.player);
+      scene.add(this.player.group);
+    }
+    if (!test && this.opts.rivals) {
       const n = Math.max(0, Math.min(RIVALS.length, this.opts.rivalCount, MAX_HOLES - 1));
       for (let i = 0; i < n; i++) {
         const h = new Hole({ name: RIVALS[i].name, color: RIVALS[i].color });
@@ -269,22 +376,31 @@ export class Game {
       }
     }
 
-    // Keep hole outlines above the highest stacked decal (maps with many decals stack past y=0.03).
+    // Outlines ignore depth (so decals / ground / edge geometry never hide them) and are masked by object stencil;
+    // still keep them above the highest stacked decal so the ordering is right even without that.
     const decalTop = 0.01 + decalN * 0.002;
-    for (const h of this.holes) {
-      h.ring.position.y = Math.max(h.ring.position.y, decalTop + 0.01);
-      if (h.progRing) h.progRing.position.y = h.ring.position.y + 0.005;
-    }
+    setHoleTint(map.groundColor);
+    for (const h of this.holes) h.setBaseY(Math.max(h.ring.position.y, decalTop + 0.01));
+    this.effects = test ? null : new Effects(this);
 
-    this.timeLeft = this.opts.mode === 'arcade' ? ARCADE_START_SECONDS : TIME_ATTACK_SECONDS;
-    this.arc = { score: 0, combo: 0, comboT: 0, bestCombo: 0, maxLevel: 1, gainPending: 0, gainT: 0, elapsed: 0, lastTick: -1, bonus: 0 };
+    this.timeLeft = test ? null : this.opts.mode === 'arcade' ? ARCADE_START_SECONDS : TIME_ATTACK_SECONDS;
+    this.arc = test ? null : { score: 0, combo: 0, comboT: 0, bestCombo: 0, maxLevel: 1, gainPending: 0, gainT: 0, elapsed: 0, lastTick: -1, bonus: 0 };
     this.endT = 0;
     this.lastLevel = 1;
-    this.peak = this.player.targetRadius;
+    this.peak = this.player?.targetRadius ?? 0;
     this.sinceSwallow = 0;
     this.stallT = 0;
     this.cam = { x: 0, z: 0, d: 20 };
-    this.updateCamera(0, true);
+    if (test) {
+      this.testView = { x: 0, z: 0, d: 20, fit: 20, overview: true };
+      this.fitTestView();
+    } else this.updateCamera(0, true);
+    this.camera.updateMatrixWorld();
+    this.modelLOD.update(0, true);
+    if (high && map.postProcessing) {
+      this.postProcessing = new MapPostProcessing(this.renderer, scene, this.camera, map.postProcessing);
+      this.postProcessing.setSize(window.innerWidth, window.innerHeight);
+    }
   }
 
   placeObject(rand, name, x, z, rotY, scale, opts) {
@@ -322,7 +438,7 @@ export class Game {
       const o = out[i];
       if (Math.hypot(o.x - x, o.z - z) < (o.r + r) * overlap) return false;
     }
-    const o = this.spawnObject(p, x, z, rotY, scale);
+    const o = this.spawnObject(p, x, z, rotY, scale, !!move);
     if (move) this.movers.add(o, move);
     return true;
   }
@@ -339,14 +455,24 @@ export class Game {
     const r = p.radius * scale;
     const S = this.size;
     const step = route.total / Math.max(1, count);
-    const phase = route.loop ? rand() * step : step / 2;
+    const phase = rand() * step;
     let placed = 0;
     for (let i = 0; i < count; i++) {
       const s = phase + i * step;
-      const o = this.spawnObject(p, 0, 0, 0, scale);
+      const o = this.spawnObject(p, 0, 0, 0, scale, true);
       this.movers.add(o, { type: 'route', route, s, offset, speed: speed * (1 + (rand() * 2 - 1) * speedJitter) });
       this.movers.evalRoute(o, o.mv, 0);
-      if (Math.abs(o.x) > S - r - 1 || Math.abs(o.z) > S - r - 1 || Math.hypot(o.x, o.z) < r + SPAWN_CLEAR) {
+      let safe = false;
+      for (let attempt = 0; attempt < 12; attempt++) {
+        if (Math.abs(o.x) <= S - r - 1 && Math.abs(o.z) <= S - r - 1 &&
+            Math.hypot(o.x, o.z) >= r + SPAWN_CLEAR && this.movers.traffic.canSpawn(o)) {
+          safe = true;
+          break;
+        }
+        o.mv.s = (o.mv.s + o.mv.path.total * 0.61803398875) % o.mv.path.total;
+        this.movers.evalRoute(o, o.mv, 0);
+      }
+      if (!safe) {
         this.discardObject(o);
         continue;
       }
@@ -355,38 +481,30 @@ export class Game {
     return placed;
   }
 
-  spawnObject(p, x, z, rotY, scale) {
+  /** individual: movers get their own Mesh now; static objects are batched into instances by instances.build(). */
+  spawnObject(p, x, z, rotY, scale, individual = false) {
     const r = p.radius * scale;
-    const mesh = new THREE.Mesh(p.geometry, objectMaterial);
-    mesh.position.set(x, 0, z);
-    mesh.rotation.y = rotY;
-    mesh.scale.setScalar(scale);
-    mesh.matrixAutoUpdate = false;
-    mesh.updateMatrix();
-    if (this.high) {
-      mesh.castShadow = p.height * scale > SHADOW_MIN_H;
-      mesh.receiveShadow = true;
-    }
-    this.scene.add(mesh);
     const o = {
-      mesh, proto: p, x, z, y: 0, yaw: rotY, scale, r, h: p.height * scale,
+      mesh: null, batch: null, slot: -1, group: null, far: false, cast: this.high && p.height * scale > SHADOW_MIN_H, proto: p, x, z, y: 0, yaw: rotY, scale, r, h: p.height * scale,
       value: p.value * scale * scale * scale,
-      state: IDLE, inActive: false, idx: this.live.length, cellKey: -1, mv: null, mvIdx: -1,
+      state: IDLE, inActive: false, idx: this.live.length, trafficId: this.objects.length, cellKey: -1, mv: null, mvIdx: -1,
     };
     this.live.push(o);
     this.objects.push(o);
     this.grid.insert(o);
     if (r > this.maxR) this.maxR = r;
+    if (individual) this.instances.createMesh(o);
     return o;
   }
 
   /** Undo spawnObject (only valid for the most recently spawned object). */
   discardObject(o) {
+    disposeModelAnimation(o);
     this.grid.remove(o);
     this.removeLive(o);
     this.objects.pop();
     if (o.mv) this.movers.remove(o);
-    this.scene.remove(o.mesh);
+    this.instances.release(o);
   }
 
   removeLive(o) {
@@ -488,6 +606,7 @@ export class Game {
   // ---- events ------------------------------------------------------------
 
   onSwallowed(o) {
+    disposeModelAnimation(o);
     const h = o.hole;
     h.addArea(o.value);
     h.count++;
@@ -522,6 +641,7 @@ export class Game {
       gain += milestone;
       this.hud.popup(`Combo x${c}! +${milestone}s`, 1200);
       audio.levelUp();
+      if (c >= 10) this.effects?.sparkle(this.player, c >= 20 ? 1.6 : 1);
     }
     a.score += Math.round(Math.max(1, o.value * 10) * this.arcadeMult());
     this.addTime(gain);
@@ -577,19 +697,45 @@ export class Game {
 
   loop(t) {
     requestAnimationFrame((tt) => this.loop(tt));
-    const dt = Math.min(0.05, (t - this.last) / 1000);
+    const raw = (t - this.last) / 1000;
+    const dt = Math.min(0.05, raw);
     this.last = t;
+    if (this.adaptive && this.scene && this.state === 'playing') this.adaptive.sample(raw);
     this.time += dt;
     timeUniform.value = this.time;
+    modelTimeUniform.value = this.time;
     if (!this.scene || this.state === 'idle') return;
     if (this.state === 'playing' || this.state === 'ending') this.update(dt);
-    this.renderer.render(this.scene, this.camera);
+    this.instances?.cull(); // pack the instances visible to the camera / sun shadow before drawing
+    if (this.postProcessing && this.postOn) this.postProcessing.render();
+    else this.renderer.render(this.scene, this.camera);
   }
 
   update(dt) {
     const S = this.size;
     const p = this.player;
     this.input.poll();
+    if (this.opts.mode === 'test') {
+      const view = this.testView;
+      if (this.input.x || this.input.z) {
+        const speed = view.d * 0.3;
+        view.x = Math.max(-S, Math.min(S, view.x + this.input.x * speed * dt));
+        view.z = Math.max(-S, Math.min(S, view.z + this.input.z * speed * dt));
+        view.overview = false;
+      }
+      this.movers.update(dt);
+      animateModels(this, dt);
+      this.environmentAnimation.update(dt, this.time);
+      this.contactShadows?.update();
+      holeUniforms.uHoleCount.value = 0;
+      this.updateCamera(dt, false);
+      this.camera.updateMatrixWorld();
+      this.modelLOD.update(dt);
+      this.boatWakes?.update(dt, this.time);
+      this.scenery.update(dt, this.camera, this.time);
+      this.updateShadow();
+      return;
+    }
 
     if (p.alive && this.state === 'playing') {
       const ix = this.input.x, iz = this.input.z;
@@ -599,6 +745,7 @@ export class Game {
     }
     for (const ai of this.ais) ai.update(dt, this);
     this.movers.update(dt);
+    animateModels(this, dt);
 
     for (const h of this.holes) {
       if (!h.alive) {
@@ -617,6 +764,8 @@ export class Game {
       swallowNear(this, h);
     }
     updateActive(this, dt);
+    this.environmentAnimation.update(dt, this.time);
+    this.contactShadows?.update();
     if (this.state === 'playing') holeVsHole(this); // frozen while 'ending' so nobody gets eaten with no respawn
 
     // Shader uniforms
@@ -626,8 +775,16 @@ export class Game {
       holeUniforms.uHoles.value[n++].set(h.x, h.z, h.r);
     }
     holeUniforms.uHoleCount.value = n;
+    // Backdrop scenery only pays for the hole discard while a hole actually overhangs the map edge.
+    let over = 0;
+    for (const h of this.holes) if (h.alive && Math.max(Math.abs(h.x), Math.abs(h.z)) + h.r > S - 0.05) over = 1;
+    edgeHoleUniform.value = over;
+    this.effects.update(dt);
 
     this.updateCamera(dt, false);
+    this.camera.updateMatrixWorld();
+    this.modelLOD.update(dt);
+    this.boatWakes?.update(dt, this.time);
     this.occlusion.update();
     this.scenery.update(dt, this.camera, this.time);
     this.updateShadow();
@@ -662,7 +819,8 @@ export class Game {
     if (lvl > this.lastLevel && p.alive) {
       this.lastLevel = lvl;
       this.hud.popup(`Level up! Size ${p.size}`);
-      audio.levelUp();
+      audio.levelUpChime();
+      this.effects.levelUp(p);
       if (this.opts.mode === 'arcade' && this.state === 'playing' && lvl > this.arc.maxLevel) {
         this.arc.maxLevel = lvl;
         this.addTime(5 + Math.min(5, (lvl - 2) * 0.5));
@@ -692,6 +850,7 @@ export class Game {
   }
 
   finish(reason) {
+    if (this.opts.mode === 'test') return;
     if (this.opts.mode === 'arcade' && reason === 'goal') {
       this.arc.bonus = Math.round(this.timeLeft) * 50; // full clear: remaining time converts to score
       this.arc.score += this.arc.bonus;
@@ -727,19 +886,90 @@ export class Game {
     };
   }
 
+  /** Distance that contains the playable square and all placed props at the normal camera tilt. */
+  testFitDistance() {
+    const tanV = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
+    const tanH = tanV * this.camera.aspect;
+    // Keep the overview clear of the title, pause button, and viewer controls.
+    const w = Math.max(1, window.innerWidth), h = Math.max(1, window.innerHeight);
+    const side = Math.max(0.25, 1 - 40 / w);
+    const top = Math.max(0.25, 1 - 160 / h);
+    const bottom = Math.max(0.25, 1 - (w < 600 ? 250 : 220) / h);
+    const sin = Math.sin(CAM_ANGLE), cos = Math.cos(CAM_ANGLE);
+    let distance = 8;
+    const include = (x, y, z) => {
+      const depthOffset = y * sin + z * cos;
+      const up = y * cos - z * sin;
+      distance = Math.max(distance, depthOffset + Math.max(Math.abs(x) / (tanH * side), Math.abs(up) / (tanV * (up >= 0 ? top : bottom))));
+    };
+    const edge = this.size + 3;
+    for (const x of [-edge, edge]) for (const z of [-edge, edge]) include(x, 0, z);
+    const corner = new THREE.Vector3();
+    const objMatrix = new THREE.Matrix4();
+    for (const o of this.objects) {
+      const box = o.proto.geometry.boundingBox;
+      for (const x of [box.min.x, box.max.x]) {
+        for (const y of [box.min.y, box.max.y]) {
+          for (const z of [box.min.z, box.max.z]) {
+            corner.set(x, y, z).applyMatrix4(this.instances.getMatrix(o, objMatrix));
+            include(corner.x, corner.y, corner.z);
+          }
+        }
+      }
+    }
+    return distance * 1.06;
+  }
+
+  /** Public viewer controls; gameplay zoom stays in Input.zoom. */
+  fitTestView() {
+    if (this.opts?.mode !== 'test' || !this.scene || !this.testView) return;
+    const view = this.testView;
+    view.x = view.z = 0;
+    view.d = view.fit = this.testFitDistance();
+    view.overview = true;
+    this.updateCamera(0, true);
+    this.scenery.update(0, this.camera, this.time);
+    this.updateShadow();
+  }
+
+  zoomTestView(factor) {
+    if (this.opts?.mode !== 'test' || !this.scene || !this.testView || !Number.isFinite(factor) || factor <= 0) return;
+    const view = this.testView;
+    view.d = Math.max(8, Math.min(view.fit * 2.5, view.d * factor));
+    view.overview = false;
+    this.updateCamera(0, true);
+    this.scenery.update(0, this.camera, this.time);
+    this.updateShadow();
+  }
+
   updateCamera(dt, snap) {
+    if (this.opts.mode === 'test') {
+      const view = this.testView, c = this.cam;
+      c.x = view.x; c.z = view.z; c.d = view.d;
+      this.camera.position.set(c.x, c.d * Math.sin(CAM_ANGLE), c.z + c.d * Math.cos(CAM_ANGLE));
+      this.camera.lookAt(c.x, 0, c.z);
+      this.camera.near = Math.max(0.1, c.d * 0.08);
+      this.camera.far = c.d * 8 + 300;
+      this.camera.updateProjectionMatrix();
+      this.scene.fog.near = c.d * 1.8;
+      this.scene.fog.far = c.d * 4.5 + 120;
+      return;
+    }
     const p = this.player;
     const c = this.cam;
     const asp = this.camera.aspect;
     const am = asp < 1.3 ? Math.min(1.7, 1.3 / asp) : 1;
-    const dist = (9 + p.r * 6.5) * am;
+    const fx = this.effects;
+    const dist = (9 + p.r * 6.5) * am * this.input.zoom;
     const kp = snap ? 1 : 1 - Math.exp(-dt * 5);
     const kd = snap ? 1 : 1 - Math.exp(-dt * 2.5);
     c.x += (p.x - c.x) * kp;
     c.z += (p.z - c.z) * kp;
     c.d += (dist - c.d) * kd;
-    this.camera.position.set(c.x, c.d * Math.sin(CAM_ANGLE), c.z + c.d * Math.cos(CAM_ANGLE));
+    const cd = c.d * (1 + (fx ? fx.zoom : 0)); // level-up zoom bounce
+    this.camera.position.set(c.x, cd * Math.sin(CAM_ANGLE), c.z + cd * Math.cos(CAM_ANGLE));
     this.camera.lookAt(c.x, 0, c.z);
+    if (fx && fx.shake > 0) this.camera.position.set(this.camera.position.x + fx.offX, this.camera.position.y + fx.offY, this.camera.position.z + fx.offZ);
     this.camera.near = Math.max(0.5, c.d * 0.08);
     this.camera.far = c.d * 8 + 300;
     this.camera.updateProjectionMatrix();
@@ -750,7 +980,7 @@ export class Game {
 
   /** Sun shadow box follows the camera focus and scales with the view so shadows stay crisp; snapped to texels. */
   updateShadow() {
-    if (!this.high) return;
+    if (!this.high || !this.shadowsOn) return;
     const sun = this.sun, sh = sun.shadow, c = this.cam;
     const half = Math.pow(1.12, Math.ceil(Math.log((c.d * 1.05 + 6) * 1.1) / Math.log(1.12)));
     if (half !== this.shadowHalf) {
@@ -760,10 +990,10 @@ export class Game {
       cam.near = 1;
       cam.far = 220 + half * 2.2 + 120;
       cam.updateProjectionMatrix();
-      this.shadowTexel = (half * 2) / SHADOW_MAP;
+      this.shadowTexel = (half * 2) / this.shadowSize;
       sh.normalBias = this.shadowTexel * 2.2;
     }
-    sh.needsUpdate = (this.frameN++ & 1) === 0 || half !== this.shadowHalf0;
+    sh.needsUpdate = this.frameN++ % this.shadowRate === 0 || half !== this.shadowHalf0 || !sh.map;
     this.shadowHalf0 = half;
     const tx = c.x, tz = c.z, texel = this.shadowTexel;
     const a = tx * SUN_RIGHT.x + tz * SUN_RIGHT.z;
@@ -779,6 +1009,7 @@ export class Game {
   }
 
   updateHud(force, dt = 0) {
+    if (this.opts.mode === 'test') return;
     const p = this.player;
     const timed = this.opts.mode === 'time';
     const arcade = this.opts.mode === 'arcade';

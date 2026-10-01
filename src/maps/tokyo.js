@@ -34,6 +34,13 @@ export default {
   lightColor: '#fff0f6',
   ambient: 0.62,
   groundStyle: 'concrete',
+  // Bright, slightly cool daylight; the warm accents come from the neon, lanterns and awnings.
+  lighting: {
+    sunDirection: [34, 62, 30], sunColor: '#fff6ea', sunIntensity: 0.76 * Math.PI,
+    hemiSkyColor: '#c6dcf9', hemiGroundColor: '#9b94a6', hemiIntensity: 0.6 * Math.PI,
+    shadowOpacity: 0.72, shadowRadius: 2.8, environmentIntensity: 0.3, exposure: 1.04,
+  },
+  postProcessing: { aoRadius: 0.5, aoStrength: 0.17 },
   sky: { top: '#7aa6ee', horizon: '#f8c9e2' },
   clouds: true,
   backdrop: [
@@ -59,7 +66,9 @@ export default {
     // Sidewalk strips beside the main roads
     const sw = [];
     for (const s of [-1, 1]) {
-      sw.push(rect(0, s * 8.6, S * 2, 1.6), rect(s * 8.6, 0, 1.6, S * 2));
+      for (const [t0, t1] of [[-S, -67], [-57, 57], [67, S]]) { // gaps where the secondary roads cross
+        sw.push(rect((t0 + t1) / 2, s * 8.6, t1 - t0, 1.6), rect(s * 8.6, (t0 + t1) / 2, 1.6, t1 - t0));
+      }
     }
     addDecal(merge(sw), SIDEWALK, { style: 'concrete' });
 
@@ -115,6 +124,8 @@ export default {
     // gravel platform + station stripe
     addDecal(rect(0, RAIL_Z + 8.5, S * 2.4, 6), '#b9b3a6', { style: 'concrete' });
     addDecal(rect(0, RAIL_Z + 6.2, S * 2.4, 0.4), '#f2c230');
+    // level crossings: the roads that run through the railway are repainted over the track bed and platform
+    addDecal(merge([rect(0, RAIL_Z + 3, 14, 19), rect(-62, RAIL_Z + 3, 10, 19), rect(62, RAIL_Z + 3, 10, 19)]), ROAD, { style: 'asphalt' });
 
     // --- Cherry blossom park
     const px = (PARK[0] + PARK[1]) / 2, pz = (PARK[2] + PARK[3]) / 2;
@@ -140,8 +151,11 @@ export default {
     const tiles = [];
     for (let i = 0; i < 30; i++) {
       const x = randRange(-S + 6, S - 6), z = randRange(-S + 6, S - 6);
-      if (Math.abs(x) < 9 || Math.abs(z) < 9) continue;
-      tiles.push(rect(x, z, randRange(4, 9), randRange(4, 9)));
+      const w = randRange(4, 9), d = randRange(4, 9);
+      // shop-front tiles lie on the blocks only, never across a road (roads: 0 +-7, +-62 +-5)
+      const hitsRoad = (v, h) => Math.abs(v) < 9 + h || Math.abs(Math.abs(v) - 62) < 5 + h;
+      if (hitsRoad(x, w / 2) || hitsRoad(z, d / 2)) continue;
+      tiles.push(rect(x, z, w, d));
     }
     addDecal(merge(tiles), '#9a9da6', { style: 'concrete' });
     // --- Traffic routes (used by populate): four quadrant loops on the main + secondary roads (all turning the
@@ -158,12 +172,12 @@ export default {
       rt.spurs.push(ctx.addRoute([[-110, s * 62], [110, s * 62]], { loop: false, width: 6 }));
       rt.spurs.push(ctx.addRoute([[s * 62, -110], [s * 62, 110]], { loop: false, width: 6 }));
     }
-    rt.rail = ctx.addRoute([[-100, RAIL_Z], [100, RAIL_Z]], { loop: false, width: 8 });
+    rt.rail = ctx.addRoute([[-100, RAIL_Z], [100, RAIL_Z]], { loop: false, width: 8, network: 'rail' });
 
     // --- Parking: a station lot beside the railway, a shopping-district lot, a temple-side lot, and kerbside
     // parking along the two main streets (only the loop segments / spurs that run on the wide roads).
     this.lots = {
-      station: ctx.parkingLot(-38, -76, 44, 18, { stallW: 2.6, stallD: 5, aisle: 6, color: '#5d6068', lineColor: '#f2f2f2' }),
+      station: ctx.parkingLot(-35, -76, 40, 18, { stallW: 2.6, stallD: 5, aisle: 6, color: '#5d6068', lineColor: '#f2f2f2' }),
       shop: ctx.parkingLot(95, -38, 36, 34, { stallW: 2.6, stallD: 5, aisle: 6, color: '#5d6068', lineColor: '#f2f2f2' }),
       temple: ctx.parkingLot(-90, 32, 40, 34, { stallW: 2.6, stallD: 5, aisle: 6, color: '#5d6068', lineColor: '#f2f2f2' }),
     };
@@ -180,13 +194,14 @@ export default {
   populate(ctx) {
     const { place, randRange, rand, pick, size: S } = ctx;
     const isRoad = (x, z, m = 0) =>
+      (Math.abs(x) < 14 + m && Math.abs(z) < 14 + m) || // scramble crossing
       Math.abs(x) < 8 + m || Math.abs(z) < 8 + m ||
       Math.abs(Math.abs(x) - 62) < 6 + m || Math.abs(Math.abs(z) - 62) < 6 + m;
     const blocked = (x, z, m = 0) =>
       isRoad(x, z, m) || Math.abs(z - RAIL_Z) < 8 + m || (z < RAIL_Z + 15 && z > RAIL_Z - 8) ||
       inBox(x, z, PARK, m) || inBox(x, z, TEMPLE, m);
     // city(): buildings etc. only in the block interiors
-    const LOTS = [[-60, -16, -85, -67], [77, 113, -55, -21], [-110, -70, 15, 49]];
+    const LOTS = [[-55, -15, -85, -67], [77, 113, -55, -21], [-110, -70, 15, 49]];
     const inLot = (x, z) => LOTS.some((b) => x > b[0] - 1 && x < b[1] + 1 && z > b[2] - 1 && z < b[3] + 1);
     // buildings face the nearest street (their front is local +Z)
     const facing = (x, z) => {

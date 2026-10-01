@@ -190,3 +190,76 @@ h2 { font-size: 36px; }
 @keyframes combobump { 0% { transform: scale(1.5); } 100% { transform: none; } }
 .hud-combobar { width: 130px; height: 8px; border-radius: 5px; background: rgba(0,0,0,0.5); border: 1.5px solid rgba(255,255,255,0.7); overflow: hidden; }
 .hud-combobar i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #ff6a00, #ffd23f); }
+
+/* Map viewer entry stays reachable while the main menu scrolls. */
+.screen.main-menu {
+  bottom: max(80px, calc(env(safe-area-inset-bottom) + 76px));
+  padding-bottom: 20px;
+}
+.screen.main-menu::after {
+  content: ""; position: fixed; left: 0; right: 0; bottom: 0;
+  height: max(80px, calc(env(safe-area-inset-bottom) + 76px));
+  background: #241663; pointer-events: none;
+}
+.screen.main-menu > .logo, .screen.main-menu > .menu-buttons, .screen.main-menu > .hint { flex-shrink: 0; }
+.screen.main-menu .test-mode-entry {
+  position: fixed; z-index: 3;
+  left: max(16px, calc(env(safe-area-inset-left) + 12px));
+  bottom: max(16px, calc(env(safe-area-inset-bottom) + 12px));
+  min-height: 44px; padding: 9px 18px; border-radius: 14px; font-size: 16px;
+  background: #44317e; border: 1px solid #c0b2ed; --sh: #180e3d;
+}
+.screen.test-map-picker { justify-content: flex-start; }
+.screen.test-map-picker h2 { text-align: center; font-size: clamp(26px, 5vw, 36px); }
+.screen.test-map-picker > * { flex-shrink: 0; }
+button:focus-visible { outline: 3px solid #ffd23f; outline-offset: 4px; }
+
+/* Only viewer buttons intercept input; the map remains draggable behind the overlay. */
+.hud.test-mode .hud-tl { width: min(420px, calc(100vw - 100px)); }
+.hud-test-label {
+  align-self: flex-start; padding: 3px 10px; border-radius: 9px;
+  background: rgba(20, 10, 50, 0.85); color: #ffd23f; font-size: 15px; font-weight: 800;
+}
+.hud.test-mode .hud-progress, .hud.test-mode .hud-sizebox,
+.hud.test-mode .hud-timer, .hud.test-mode .hud-gains,
+.hud.test-mode .hud-arcade, .hud.test-mode .hud-board,
+.hud.test-mode .hud-popups, .hud.test-mode .hud-respawn { display: none !important; }
+.hud-viewer {
+  position: absolute; left: max(12px, env(safe-area-inset-left));
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(12px, calc(env(safe-area-inset-bottom) + 8px));
+  display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none;
+}
+.hud-viewer-controls { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.viewer-button {
+  pointer-events: auto; cursor: pointer; touch-action: manipulation;
+  min-height: 48px; min-width: 48px; padding: 8px 14px; border-radius: 14px;
+  border: 2px solid #fff; background: rgba(20, 10, 50, 0.9); color: #fff;
+  font: inherit; font-weight: 800; font-size: 16px;
+}
+.viewer-button:active { background: #59429b; }
+.viewer-zoom { font-size: 26px; padding: 4px 12px; }
+.hud-viewer-hint {
+  margin: 0; max-width: 460px; text-align: center; border-radius: 10px; padding: 4px 10px;
+  background: rgba(20, 10, 50, 0.8); font-size: 13px; line-height: 1.4;
+}
+@media (max-height: 760px) {
+  .screen.main-menu { justify-content: flex-start; }
+  .screen.main-menu .logo { font-size: clamp(52px, 12vmin, 90px); }
+  .screen.main-menu .menu-buttons { gap: 12px; }
+  .screen.main-menu .btn.big { min-height: 58px; padding: 12px 24px; font-size: 24px; }
+}
+@media (max-width: 380px) {
+  .hud-viewer-controls { gap: 6px; }
+  .viewer-button { padding-left: 10px; padding-right: 10px; font-size: 14px; }
+  .viewer-zoom { font-size: 26px; }
+}
+
+/* async map preload ("Loading...") + error toast */
+.screen.loading h2 { font-size: clamp(32px, 7vw, 48px); animation: load-pulse 1s ease-in-out infinite alternate; }
+@keyframes load-pulse { from { opacity: 0.55; } to { opacity: 1; } }
+.load-error {
+  position: absolute; left: 50%; bottom: max(24px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+  max-width: min(520px, 90vw); padding: 12px 20px; border-radius: 18px; background: #f0505a; color: #fff;
+  font-weight: 800; text-align: center; box-shadow: 0 5px 0 #a12a32, 0 10px 18px rgba(0,0,0,0.3);
+}

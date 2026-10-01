@@ -1,7 +1,12 @@
 // Moon object prototypes. Vehicles are length-along-X, front toward +X.
 // Faceted rocks (low segment counts keep a chiselled look), lathe domes/tanks/dishes, rbox hulls, lattice struts.
 import * as THREE from 'three';
-import { box, cyl, cone, sphere, torus, rbox, capsule, lathe, extrude, makeProto } from './build.js';
+import * as BUILD from './build.js';
+import { makeProto, articulate, emissiveParts } from './build.js';
+import { recessedWindow as baseWindow } from './ModelDetails.js';
+import { applyModelFinishes } from './ModelFinishes.js';
+// Habitat windows glow softly: only the glass pane is emissive, not the frame.
+const recessedWindow = (w, h, d, o = {}) => emissiveParts(baseWindow(w, h, d, o), 0.6, o.glassColor);
 
 const C = {
   rock: '#9a9aa2', drock: '#75757e', lrock: '#b9b9c0', white: '#f4f4f8', suit: '#e8e8f0',
@@ -9,6 +14,24 @@ const C = {
   blue: '#2f5fc4', dblue: '#1c2f6b', red: '#d9382b', glass: '#8fd3f4', orange: '#f28c28',
   tire: '#3a3a40', green: '#4fbf6a', teal: '#3cb7b0', purple: '#7a55c8', cell: '#243c8a', cellL: '#3556b8',
 };
+// Every primitive gets a surface from its colour (per-part opts override): foil/metal/solar glass are shiny under the
+// 'lunar' finish profile, rocks are matte stone, suits are fabric, tyres rubber.
+const PALETTE = new Map([
+  [C.rock, 'stone'], [C.drock, 'stone'], [C.lrock, 'stone'], ['#5e5e68', 'stone'], ['#8a8a92', 'stone'],
+  [C.suit, 'fabric'], [C.tire, 'rubber'], ['#26262c', 'rubber'], ['#3a3a44', 'rubber'],
+  [C.glass, 'glass'], ['#fff6c0', 'glass'], [C.cell, 'glass'], [C.cellL, 'glass'], [C.dblue, 'glass'],
+  [C.gold, 'metal'], [C.dgold, 'metal'], ['#f4d060', 'metal'], [C.gray, 'metal'], [C.lgray, 'metal'], [C.dark, 'metal'],
+  [C.white, 'paint'], [C.orange, 'paint'], [C.red, 'paint'], [C.blue, 'paint'], [C.green, 'paint'],
+]);
+const STRENGTH = { stone: 0.85, fabric: 0.5, rubber: 0.6, glass: 0.25, metal: 0.45, paint: 0.4 };
+const surfaced = (fn, ci) => (...a) => {
+  const surface = PALETTE.get(a[ci]) ?? 'paint';
+  a[ci + 1] = { surface, textureStrength: STRENGTH[surface], ...(a[ci + 1] ?? {}) };
+  return fn(...a);
+};
+const box = surfaced(BUILD.box, 3), rbox = surfaced(BUILD.rbox, 3), cyl = surfaced(BUILD.cyl, 3), cone = surfaced(BUILD.cone, 2);
+const sphere = surfaced(BUILD.sphere, 1), torus = surfaced(BUILD.torus, 2), capsule = surfaced(BUILD.capsule, 2);
+const lathe = surfaced(BUILD.lathe, 1), extrude = surfaced(BUILD.extrude, 2);
 const PI = Math.PI;
 const B = (w, h, d, c, x, y, z, o = {}) => box(w, h, d, c, { x, y, z, ...o });
 const RB = (w, h, d, c, x, y, z, o = {}) => rbox(w, h, d, c, { x, y, z, segments: 1, ...o });
@@ -39,18 +62,21 @@ function rockCluster(chunks, seed) {
   return p;
 }
 
-const wheel = (x, y, z, rad, w = 0.4) => [
-  cyl(rad, rad, w, C.tire, { x, y, z, rx: PI / 2, segments: 12 }),
-  cyl(rad * 0.62, rad * 0.62, w + 0.04, C.lgray, { x, y, z, rx: PI / 2, segments: 10 }),
-  cyl(rad * 0.2, rad * 0.2, w + 0.08, C.dark, { x, y, z, rx: PI / 2, segments: 6 }),
-  ...Array.from({ length: 6 }, (_, i) => {
-    const a = (i / 6) * PI * 2;
-    return B(0.12, 0.06, w + 0.02, '#26262c', x + Math.cos(a) * rad, y + Math.sin(a) * rad, z, { rz: a + PI / 2 });
-  }),
-];
+const wheel = (x, y, z, rad, w = 0.4) => {
+  const pivot = [x, y, z], o = { radius: rad, front: x > 0 };
+  return [
+    cyl(rad, rad, w, C.tire, { x, y, z, rx: PI / 2, segments: 12 }),
+    cyl(rad * 0.62, rad * 0.62, w + 0.04, C.lgray, { x, y, z, rx: PI / 2, segments: 10 }),
+    cyl(rad * 0.2, rad * 0.2, w + 0.08, C.dark, { x, y, z, rx: PI / 2, segments: 6 }),
+    ...Array.from({ length: 6 }, (_, i) => {
+      const a = (i / 6) * PI * 2;
+      return B(0.12, 0.06, w + 0.02, '#26262c', x + Math.cos(a) * rad, y + Math.sin(a) * rad, z, { rz: a + PI / 2 });
+    }),
+  ].map((g) => articulate(g, 'wheel', pivot, o));
+};
 export function buildProtos() {
   const P = {};
-  const add = (name, parts, opts) => (P[name] = makeProto(name, parts.flat(), opts));
+  const add = (name, parts, opts) => (P[name] = applyModelFinishes(makeProto(name, parts.flat(), opts), 'lunar'));
 
   add('pebble', rockCluster([[0, 0.14, 0, 0.28, C.rock, 0.6, 1.2], [0.4, 0.1, 0.2, 0.18, C.drock, 0.6], [-0.3, 0.09, 0.3, 0.14, C.lrock, 0.6], [-0.15, 0.06, -0.32, 0.12, C.drock, 0.6]], 1), { value: 0.2 });
   add('rockS', rockCluster([[0, 0.3, 0, 0.5, C.rock, 0.7, 1.1], [0.15, 0.45, 0.1, 0.3, C.lrock, 0.7], [-0.5, 0.15, 0.3, 0.25, C.drock, 0.6], [0.5, 0.12, -0.3, 0.2, C.rock, 0.6]], 2), { value: 0.35 });
@@ -72,12 +98,16 @@ export function buildProtos() {
   add('astronaut', (() => {
     const p = [];
     for (const sg of [1, -1]) {
-      p.push(capsule(0.1, 0.32, C.suit, { x: 0, y: 0.32, z: sg * 0.13, segments: 8, caps: 2 }), RB(0.3, 0.14, 0.17, C.dgold, 0.05, 0.07, sg * 0.13, { bevel: 0.04 }));
+      const hip = [0, 0.58, sg * 0.13], o = { side: sg, hip };
+      p.push(articulate(capsule(0.1, 0.32, C.suit, { x: 0, y: 0.32, z: sg * 0.13, segments: 8, caps: 2 }), 'leg', hip, o),
+        articulate(RB(0.3, 0.14, 0.17, C.dgold, 0.05, 0.07, sg * 0.13, { bevel: 0.04 }), 'leg', hip, o));
     }
     p.push(capsule(0.24, 0.34, C.white, { y: 0.88, sx: 0.85, segments: 10, caps: 3 }), RB(0.22, 0.14, 0.3, C.red, 0.2, 0.9, 0, { bevel: 0.03 }), RB(0.28, 0.06, 0.34, C.orange, 0.18, 1.05, 0, { bevel: 0.02 }));
-    p.push(RB(0.32, 0.52, 0.44, C.lgray, -0.28, 0.95, 0, { bevel: 0.06 }), cyl(0.05, 0.05, 0.25, C.dark, { x: -0.3, y: 0.7, z: 0.18, rx: 0.3, segments: 6 }), B(0.04, 0.16, 0.2, C.white, -0.3, 1.2, 0), Sl(0.03, C.red, { x: -0.44, y: 1.05, z: 0.1 }), Sl(0.03, C.green, { x: -0.44, y: 1.05, z: -0.1 }));
+    p.push(RB(0.32, 0.52, 0.44, C.lgray, -0.28, 0.95, 0, { bevel: 0.06 }), cyl(0.05, 0.05, 0.25, C.dark, { x: -0.3, y: 0.7, z: 0.18, rx: 0.3, segments: 6 }), B(0.04, 0.16, 0.2, C.white, -0.3, 1.2, 0), Sl(0.03, C.red, { emissive: 2, x: -0.44, y: 1.05, z: 0.1 }), Sl(0.03, C.green, { x: -0.44, y: 1.05, z: -0.1 }));
     for (const sg of [1, -1]) {
-      p.push(capsule(0.09, 0.32, C.suit, { x: 0.08, y: 0.86, z: sg * 0.34, rx: sg * -0.35, rz: -0.3, segments: 8, caps: 2 }), Sl(0.1, C.dgold, { x: 0.14, y: 0.6, z: sg * 0.44 }));
+      const shoulder = [0.08, 1.08, sg * 0.34], o = { side: sg };
+      p.push(articulate(capsule(0.09, 0.32, C.suit, { x: 0.08, y: 0.86, z: sg * 0.34, rx: sg * -0.35, rz: -0.3, segments: 8, caps: 2 }), 'arm', shoulder, o),
+        articulate(Sl(0.1, C.dgold, { x: 0.14, y: 0.6, z: sg * 0.44 }), 'arm', shoulder, o));
     }
     p.push(cyl(0.16, 0.18, 0.08, C.gray, { y: 1.2, segments: 8 }), sphere(0.31, C.white, { y: 1.5, segments: 12, rings: 9 }));
     p.push(sphere(0.24, C.gold, { x: 0.13, y: 1.5, sx: 0.65, sy: 0.85, sz: 1.05, segments: 10, rings: 7 }), sphere(0.1, '#fff4c0', { x: 0.26, y: 1.6, z: 0.08, sx: 0.4, segments: 6, rings: 4 }));
@@ -93,7 +123,7 @@ export function buildProtos() {
     lathe([[0, 0], [0.34, 0], [0.34, 0.06], [0.16, 0.14], [0.06, 0.2], [0, 0.2]], C.gray, { segments: 12 }),
     cyl(0.04, 0.05, 1.5, C.lgray, { y: 0.9, segments: 6 }), B(0.55, 0.03, 0.03, C.lgray, 0, 1.4, 0), B(0.03, 0.03, 0.4, C.lgray, 0, 1.25, 0),
     lathe([[0.02, 1.62], [0.14, 1.72], [0.2, 1.8], [0.17, 1.8], [0.1, 1.72], [0.0, 1.66]], C.white, { segments: 10, x: 0.06, rz: -0.5 }), cone(0.04, 0.2, C.red, { y: 1.8, segments: 6 }),
-    Sl(0.07, C.red, { y: 1.98 }), B(0.18, 0.14, 0.14, C.white, 0.16, 0.24, 0),
+    Sl(0.07, C.red, { emissive: 2, y: 1.98 }), B(0.18, 0.14, 0.14, C.white, 0.16, 0.24, 0),
   ], { value: 0.55 });
   add('antenna', (() => {
     const p = [RB(1.7, 0.3, 1.7, C.gray, 0, 0.15, 0, { bevel: 0.05 })];
@@ -106,7 +136,7 @@ export function buildProtos() {
       p.push(strut([c[0][0], y, c[0][1]], [c[2][0] * 0.9, y + 1, c[2][1] * 0.9], 0.025, C.gray, 4));
     }
     p.push(cyl(0.1, 0.16, 1.0, C.lgray, { y: 5.6, segments: 8 }), B(1.3, 0.1, 0.1, C.lgray, 0, 5.4, 0), B(0.1, 0.1, 1.3, C.lgray, 0, 5.0, 0), B(1.0, 0.1, 0.1, C.lgray, 0, 4.6, 0));
-    p.push(cone(0.15, 0.8, C.red, { y: 6.5, segments: 8 }), Sl(0.1, C.red, { y: 6.95 }), RB(0.6, 0.6, 0.5, C.white, 0.7, 0.6, 0, { bevel: 0.06 }), B(0.3, 0.2, 0.04, C.dark, 0.7, 0.7, 0.27), Sl(0.04, C.green, { x: 0.9, y: 0.85, z: 0.27 }));
+    p.push(cone(0.15, 0.8, C.red, { y: 6.5, segments: 8 }), Sl(0.1, C.red, { emissive: 2, y: 6.95 }), RB(0.6, 0.6, 0.5, C.white, 0.7, 0.6, 0, { bevel: 0.06 }), B(0.3, 0.2, 0.04, C.dark, 0.7, 0.7, 0.27), Sl(0.04, C.green, { x: 0.9, y: 0.85, z: 0.27 }));
     for (const s of [1, -1]) p.push(lathe([[0.02, 0], [0.22, 0.08], [0.3, 0.16], [0.26, 0.16], [0.18, 0.08], [0, 0.02]], C.white, { segments: 10, x: 0, y: 5.3, z: s * 0.6, rz: -PI / 2 }));
     return p;
   })(), { value: 1.5 });
@@ -160,7 +190,7 @@ export function buildProtos() {
     cyl(0.35, 0.5, 3.0, C.lgray, { y: 2.4, segments: 10 }), RB(1.4, 1.0, 1.4, C.gray, 0, 4.2, 0, { bevel: 0.15 }),
     lathe([[0.1, 0], [1.2, 0.3], [2.4, 1.0], [3.4, 2.0], [4.0, 2.7], [3.85, 2.7], [3.2, 1.9], [2.2, 0.95], [1.0, 0.3], [0.0, 0.2]], C.white, { segments: 20, x: 0.7, y: 4.6, rz: -0.75 }),
     strut([1.2, 5.3, 1.6], [3.6, 8.0, 0], 0.07, C.lgray), strut([1.2, 5.3, -1.6], [3.6, 8.0, 0], 0.07, C.lgray),
-    cyl(0.3, 0.12, 0.6, C.red, { x: 3.6, y: 8.2, rz: -0.75, segments: 10 }), Sl(0.25, C.red, { x: 3.9, y: 8.5 }),
+    cyl(0.3, 0.12, 0.6, C.red, { x: 3.6, y: 8.2, rz: -0.75, segments: 10 }), Sl(0.25, C.red, { emissive: 2, x: 3.9, y: 8.5 }),
     RB(0.9, 0.7, 0.6, C.white, 1.8, 0.75, 1.1, { bevel: 0.08 }), Sl(0.05, C.green, { x: 2.0, y: 0.95, z: 1.42 }),
   ], { value: 8 });
 
@@ -173,11 +203,11 @@ export function buildProtos() {
     p.push(lathe(dome, C.white, { segments: 24, flat: false }));
     for (const a of [0.25, 0.6, 0.95, 1.25]) p.push(torus(Math.cos(a) * 3.02, 0.05, C.lgray, { y: 0.5 + Math.sin(a) * 2.92, rx: PI / 2, radial: 4, segments: 26 }));
     // window band + airlock tunnel
-    for (const a of [1.2, 2.2, 3.6, 4.6]) p.push(B(0.9, 0.55, 0.08, C.glass, Math.cos(a) * 2.75, 1.5, Math.sin(a) * 2.75, { ry: -a + PI / 2 }));
+    for (const a of [1.2, 2.2, 3.6, 4.6]) p.push(...recessedWindow(0.9, 0.55, 0.1, { x: Math.cos(a) * 2.94, y: 1.5, z: Math.sin(a) * 2.94, ry: PI / 2 - a, frame: 0.06, frameColor: C.lgray, glassColor: '#8fd3f4', mullion: true }));
     p.push(cyl(0.9, 0.9, 1.7, C.lgray, { x: 3.2, y: 0.95, rz: PI / 2, segments: 14 }), cyl(0.95, 0.95, 0.15, C.gray, { x: 2.5, y: 0.95, rz: PI / 2, segments: 14 }), cyl(1.0, 1.0, 0.12, C.orange, { x: 3.98, y: 0.95, rz: PI / 2, segments: 14 }), B(0.06, 1.1, 0.8, C.dark, 4.06, 0.85, 0), B(0.03, 0.3, 0.3, C.glass, 4.1, 1.2, 0));
     p.push(RB(1.6, 0.06, 0.05, C.gray, 3.3, 0.02, 1.0), strut([3.3, 0.3, 0.7], [3.3, 1.6, 0.9], 0.02, C.gray, 4));
     // roof gear: mast, dish, solar strip
-    p.push(cyl(0.05, 0.06, 1.7, C.lgray, { x: -0.5, y: 4.2, segments: 6 }), Sl(0.13, C.red, { x: -0.5, y: 5.1 }), lathe([[0.02, 0], [0.4, 0.15], [0.5, 0.25], [0.45, 0.25], [0.35, 0.15], [0, 0.05]], C.white, { segments: 10, x: 0.7, y: 3.45, z: -1.0, rz: -0.6 }));
+    p.push(cyl(0.05, 0.06, 1.7, C.lgray, { x: -0.5, y: 4.2, segments: 6 }), Sl(0.13, C.red, { emissive: 2, x: -0.5, y: 5.1 }), lathe([[0.02, 0], [0.4, 0.15], [0.5, 0.25], [0.45, 0.25], [0.35, 0.15], [0, 0.05]], C.white, { segments: 10, x: 0.7, y: 3.45, z: -1.0, rz: -0.6 }));
     p.push(RB(1.6, 0.06, 0.8, C.dblue, -1.0, 3.2, 1.0, { rz: 0.35, rx: 0.3, bevel: 0.02 }));
     for (const a of [0.5, 2.6, 4.4]) p.push(cyl(0.16, 0.16, 0.5, C.lgray, { x: Math.cos(a) * 2.9, y: 0.75, z: Math.sin(a) * 2.9, segments: 6 }));
     return p;
@@ -188,9 +218,9 @@ export function buildProtos() {
     const dome = []; for (let i = 0; i <= 10; i++) { const a = (i / 10) * PI / 2; dome.push([Math.cos(a) * 5.6, 0.6 + Math.sin(a) * 5.2]); }
     p.push(lathe(dome, C.white, { segments: 28, flat: false }));
     for (const a of [0.2, 0.5, 0.8, 1.1, 1.35]) p.push(torus(Math.cos(a) * 5.65, 0.08, C.lgray, { y: 0.6 + Math.sin(a) * 5.25, rx: PI / 2, radial: 4, segments: 30 }));
-    for (let i = 0; i < 10; i++) p.push(B(3.0, 0.9, 0.1, C.glass, Math.cos(i * 0.628) * 5.25, 2.6, Math.sin(i * 0.628) * 5.25, { ry: -i * 0.628 + PI / 2, sx: 0.45 }));
+    for (let i = 0; i < 10; i++) p.push(...recessedWindow(1.35, 0.9, 0.12, { x: Math.cos(i * 0.628) * 5.32, y: 2.6, z: Math.sin(i * 0.628) * 5.32, ry: PI / 2 - i * 0.628, frame: 0.09, frameColor: C.lgray, glassColor: '#8fd3f4', mullion: true }));
     p.push(cyl(1.6, 1.6, 3.2, C.lgray, { x: 6.2, y: 1.6, rz: PI / 2, segments: 16 }), cyl(1.7, 1.7, 0.2, C.gray, { x: 4.8, y: 1.6, rz: PI / 2, segments: 16 }), cyl(1.75, 1.75, 0.2, C.orange, { x: 7.75, y: 1.6, rz: PI / 2, segments: 16 }), B(0.1, 1.9, 1.4, C.dark, 7.9, 1.3, 0), B(0.05, 0.5, 0.5, C.glass, 7.95, 2.0, 0));
-    p.push(cyl(0.08, 0.1, 2.4, C.lgray, { x: 0.5, y: 6.2, segments: 6 }), Sl(0.22, C.red, { x: 0.5, y: 7.5 }), lathe([[0.02, 0], [0.7, 0.22], [0.9, 0.4], [0.8, 0.4], [0.6, 0.22], [0, 0.08]], C.white, { segments: 12, x: -1.5, y: 5.2, z: 1.5, rz: -0.6 }));
+    p.push(cyl(0.08, 0.1, 2.4, C.lgray, { x: 0.5, y: 6.2, segments: 6 }), Sl(0.22, C.red, { emissive: 2, x: 0.5, y: 7.5 }), lathe([[0.02, 0], [0.7, 0.22], [0.9, 0.4], [0.8, 0.4], [0.6, 0.22], [0, 0.08]], C.white, { segments: 12, x: -1.5, y: 5.2, z: 1.5, rz: -0.6 }));
     p.push(RB(2.6, 0.08, 1.4, C.dblue, 2.0, 4.6, -2.0, { rz: 0.4, rx: 0.3, bevel: 0.03 }), RB(2.6, 0.08, 1.4, C.dblue, -2.4, 4.4, -2.2, { rz: -0.4, rx: 0.3, bevel: 0.03 }));
     for (const a of [0.3, 1.5, 2.6, 3.8, 5.0]) p.push(cyl(0.3, 0.3, 0.8, C.lgray, { x: Math.cos(a) * 5.7, y: 1.0, z: Math.sin(a) * 5.7, segments: 8 }));
     return p;
@@ -214,7 +244,7 @@ export function buildProtos() {
     p.push(RB(2.6, 1.6, 2.6, C.gold, 0, 2.6, 0, { bevel: 0.15, segments: 2 }), B(2.7, 0.14, 2.7, C.dgold, 0, 1.9, 0));
     for (let i = 0; i < 4; i++) p.push(B(0.6, 1.3, 0.05, i % 2 ? C.dgold : '#f4d060', -0.9 + i * 0.6, 2.6, 1.31), B(0.05, 1.3, 0.6, i % 2 ? C.dgold : '#f4d060', 1.31, 2.6, -0.9 + i * 0.6));
     p.push(cyl(0.9, 1.5, 1.2, C.gray, { y: 1.35, segments: 12 }), lathe([[0.3, 0.6], [0.7, 0.9], [0.9, 1.0]], C.dark, { segments: 10 }));
-    p.push(cyl(1.25, 1.25, 1.2, C.lgray, { y: 4.0, segments: 8 }), cyl(0.85, 1.25, 0.5, C.white, { y: 4.85, segments: 8 }), B(0.9, 0.5, 0.06, C.glass, 1.2, 4.2, 0), cyl(0.05, 0.05, 0.8, C.lgray, { y: 5.4, x: -0.3, segments: 5 }), Sl(0.1, C.red, { x: -0.3, y: 5.85 }));
+    p.push(cyl(1.25, 1.25, 1.2, C.lgray, { y: 4.0, segments: 8 }), cyl(0.85, 1.25, 0.5, C.white, { y: 4.85, segments: 8 }), B(0.9, 0.5, 0.06, C.glass, 1.2, 4.2, 0), cyl(0.05, 0.05, 0.8, C.lgray, { y: 5.4, x: -0.3, segments: 5 }), Sl(0.1, C.red, { emissive: 2, x: -0.3, y: 5.85 }));
     p.push(RB(3.2, 0.08, 1.0, C.dblue, 3.0, 3.4, 0, { bevel: 0.02 }), B(3.0, 0.03, 0.2, C.cellL, 3.0, 3.46, 0.25), B(3.0, 0.03, 0.2, C.cellL, 3.0, 3.46, -0.25), B(0.5, 0.1, 0.1, C.gray, 1.3, 3.4, 0));
     p.push(lathe([[0.02, 0], [0.4, 0.15], [0.6, 0.35], [0.52, 0.35], [0.34, 0.16], [0.0, 0.06]], C.white, { segments: 12, x: -0.7, y: 5.1, z: -0.5, rz: 0.5 }));
     for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
@@ -237,7 +267,7 @@ export function buildProtos() {
     for (const [a, b] of [[0.45, 0.45], [-0.45, 0.45], [0.45, -0.45], [-0.45, -0.45]]) p.push(strut([tx + a, 1.05, tz + b], [tx + a * 0.4, 9.6, tz + b * 0.4], 0.07, C.dark));
     for (let y = 1.8; y < 9; y += 1.6) { const k = 1 - (y - 1) / 8.6 * 0.6; for (const s of [1, -1]) { p.push(strut([tx + 0.45 * k, y, tz + 0.45 * k * s], [tx - 0.45 * k, y + 0.8, tz + 0.45 * k * s], 0.035, C.gray, 4)); p.push(strut([tx + 0.45 * k * s, y, tz + 0.45 * k], [tx + 0.45 * k * s, y + 0.8, tz - 0.45 * k], 0.035, C.gray, 4)); } }
     p.push(RB(1.2, 0.8, 1.2, C.red, tx, 10.0, tz, { bevel: 0.1 }), cyl(0.2, 0.2, 5.5, C.lgray, { x: tx, y: 4.0, z: tz, segments: 8 }), cone(0.5, 1.2, C.gold, { x: tx, y: 0.6 + 0.05, z: tz, rx: PI, segments: 8 }));
-    p.push(RB(1.0, 0.7, 1.0, C.gray, tx, 6.6, tz + 0.05, { bevel: 0.08 }), Sl(0.12, C.red, { x: tx, y: 10.6 }), cyl(0.06, 0.06, 1.0, C.lgray, { x: tx, y: 11.0, segments: 5 }));
+    p.push(RB(1.0, 0.7, 1.0, C.gray, tx, 6.6, tz + 0.05, { bevel: 0.08 }), Sl(0.12, C.red, { emissive: 2, x: tx, y: 10.6 }), cyl(0.06, 0.06, 1.0, C.lgray, { x: tx, y: 11.0, segments: 5 }));
     // conveyor + hopper + bucket wheel
     p.push(RB(1.2, 0.3, 4.0, C.dark, 0.1, 1.6, 2.4, { bevel: 0.05, rx: 0.0 }), ...[0, 1, 2, 3, 4, 5].map((i) => B(0.9, 0.05, 0.1, C.orange, 0.1, 1.79, 0.9 + i * 0.5)), lathe([[0.9, 1.9], [0.6, 1.2], [0.5, 1.0]], C.red, { x: 0.1, z: 4.2, segments: 8 }));
     p.push(...Array.from({ length: 6 }, (_, i) => Sl(0.22, '#8a8a92', { x: 0.1 + (i % 3 - 1) * 0.4, y: 2.0, z: 4.2 + (i % 2) * 0.3 })));
@@ -269,7 +299,7 @@ export function buildProtos() {
     p.push(lathe([[2.2, 2.0], [2.2, 17.5]], C.white, { segments: 24, flat: false }), lathe([[2.22, 4.0], [2.22, 6.0]], C.red, { segments: 24 }), lathe([[2.22, 11.0], [2.22, 13.0]], C.red, { segments: 24 }));
     p.push(lathe([[2.2, 17.5], [2.0, 18.6], [1.6, 19.8], [1.0, 21.2], [0.4, 22.4], [0.0, 22.9]], C.red, { segments: 24, flat: false }), cyl(0.08, 0.08, 1.4, C.lgray, { y: 23.4, segments: 5 }));
     for (let i = 0; i < 3; i++) p.push(cyl(0.45, 0.45, 0.14, C.glass, { x: 2.15, y: 15.5 - i * 0.05, z: (i - 1) * 1.0, rz: PI / 2, segments: 10 }), torus(0.45, 0.07, C.lgray, { x: 2.17, y: 15.5 - i * 0.05, z: (i - 1) * 1.0, ry: PI / 2, radial: 5, segments: 12 }));
-    p.push(B(0.05, 0.9, 2.4, C.blue, 2.2, 8.5, 0), B(0.05, 0.3, 1.6, C.white, 2.22, 8.5, 0), B(1.6, 0.5, 0.05, C.blue, 0, 9.0, 2.2), Sl(0.2, C.red, { x: 2.24, y: 8.5, z: -0.5 }));
+    p.push(B(0.05, 0.9, 2.4, C.blue, 2.2, 8.5, 0), B(0.05, 0.3, 1.6, C.white, 2.22, 8.5, 0), B(1.6, 0.5, 0.05, C.blue, 0, 9.0, 2.2), Sl(0.2, C.red, { emissive: 2, x: 2.24, y: 8.5, z: -0.5 }));
     p.push(cyl(2.3, 2.3, 0.4, C.dark, { y: 2.0, segments: 24 }));
     for (const [a, r] of [[0, 1.0], [2.09, 1.0], [4.19, 1.0], [0, 0.0]]) p.push(lathe([[0.55, 0], [0.75, 0.5], [1.1, 1.2]], C.dark, { x: Math.cos(a) * r, y: 0.8, z: Math.sin(a) * r, rx: 0, segments: 12 }), cyl(0.5, 0.55, 0.6, C.gray, { x: Math.cos(a) * r, y: 2.0, z: Math.sin(a) * r, segments: 10 }));
     for (const a of [0, PI / 2, PI, -PI / 2]) {
@@ -284,7 +314,7 @@ export function buildProtos() {
     }
     for (const y of [6, 12, 19, 24]) p.push(RB(2.4, 0.2, 2.4, C.dgold, gx, y, gz, { bevel: 0.05 }), B(2.4, 0.5, 0.06, C.dgold, gx, y + 0.35, gz + 1.2), B(2.4, 0.5, 0.06, C.dgold, gx, y + 0.35, gz - 1.2));
     p.push(RB(5.2, 0.4, 0.5, C.orange, -3.9, 20.0, 5.0, { bevel: 0.06, ry: -0.2 }), RB(5.2, 0.4, 0.5, C.orange, -3.9, 12.0, 5.0, { bevel: 0.06, ry: -0.2 }), strut([gx, 20.2, gz - 0.3], [-1.5, 20.0, 2.6], 0.05, C.dgold), strut([gx, 12.2, gz - 0.3], [-1.5, 12.0, 2.6], 0.05, C.dgold));
-    p.push(cyl(0.15, 0.15, 12, C.lgray, { x: gx + 0.9, y: 8, z: gz - 1.2, segments: 6 }), strut([gx + 0.9, 14, gz - 1.2], [-2.0, 12.2, 3.0], 0.1, C.lgray), Sl(0.3, C.red, { x: gx, y: 27.2, z: gz }), cyl(0.05, 0.05, 1.6, C.gray, { x: gx, y: 27.8, z: gz, segments: 4 }));
+    p.push(cyl(0.15, 0.15, 12, C.lgray, { x: gx + 0.9, y: 8, z: gz - 1.2, segments: 6 }), strut([gx + 0.9, 14, gz - 1.2], [-2.0, 12.2, 3.0], 0.1, C.lgray), Sl(0.3, C.red, { emissive: 2, x: gx, y: 27.2, z: gz }), cyl(0.05, 0.05, 1.6, C.gray, { x: gx, y: 27.8, z: gz, segments: 4 }));
     p.push(lathe([[0, 0], [0.9, 0], [0.9, 2.0], [0.2, 2.4], [0, 2.4]], C.orange, { x: 6.5, z: -6.0, y: 0.6, segments: 14 }), lathe([[0, 0], [0.7, 0], [0.7, 1.6], [0, 1.9]], C.lgray, { x: 5.0, z: -6.5, y: 0.6, segments: 12 }));
     for (const [x, z] of [[-7, -7], [7, -7], [7, 7]]) p.push(cyl(0.09, 0.11, 3.2, C.gray, { x, y: 2.1, z, segments: 6 }), B(0.9, 0.35, 0.5, C.white, x, 3.9, z), Sl(0.18, '#fff6c0', { x: x + 0.45, y: 3.9, z }));
     return p;

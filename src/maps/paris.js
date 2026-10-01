@@ -2,6 +2,7 @@ import { buildProtos } from '../objects/paris.js';
 
 const ROAD = '#b5aea0';
 const ROAD_EDGE = '#d6ccb2';
+const RING_R = 33; // roundabout asphalt radius
 const CREAM = '#f4ecd6';
 const LAWN = '#79b761';
 const LAWN2 = '#6aa856';
@@ -18,11 +19,18 @@ export default {
   size: 120,
   groundColor: '#e2d6b8',
   skyColor: '#f6d9e8',
-  fogColor: '#f6d9e8',
+  fogColor: '#f7dcc2',
   lightColor: '#fff0e0',
   ambient: 0.62,
   groundStyle: 'concrete',
-  sky: { top: '#7fc0ee', horizon: '#f6d9e8' },
+  // Warm golden late afternoon: a low amber sun from the west, lavender sky fill, soft long shadows.
+  lighting: {
+    sunDirection: [-48, 38, 36], sunColor: '#ffbf78', sunIntensity: 0.82 * Math.PI,
+    hemiSkyColor: '#c6d2f2', hemiGroundColor: '#b08760', hemiIntensity: 0.58 * Math.PI,
+    shadowOpacity: 0.7, shadowRadius: 3.6, environmentIntensity: 0.26, exposure: 1.0,
+  },
+  postProcessing: { aoRadius: 0.5, aoStrength: 0.17 },
+  sky: { top: '#7fc0ee', horizon: '#f7dcc2' },
   clouds: true,
   backdrop: [
     { type: 'city', color: '#eadfc4', color2: '#cfc4a8' },
@@ -78,7 +86,7 @@ export default {
     }
     // ring road and roundabout
     addDecal(merge(roads), ROAD, { style: 'asphalt' });
-    addDecal(circle(0, 0, 27, 40), ROAD, { style: 'asphalt' });
+    addDecal(circle(0, 0, RING_R, 40), ROAD, { style: 'asphalt' }); // wide enough for the ring lanes incl. the detour round the Arc
     addDecal(circle(0, 0, 19, 40), ROAD_EDGE, { style: 'concrete' });
     addDecal(circle(0, 0, 17.5, 40), LAWN, { style: 'grass' });
     addDecal(circle(0, 0, 8, 32), GRAVEL, { style: 'sand' });
@@ -102,7 +110,7 @@ export default {
       const a = (k / 8) * TAU;
       for (const s of [-1, 1]) {
         const off = 7.6 * s;
-        edges.push(rect(Math.cos(a) * 62 - Math.sin(a) * off, Math.sin(a) * 62 + Math.cos(a) * off, 76, 1.6, -a));
+        edges.push(rect(Math.cos(a) * 69 - Math.sin(a) * off, Math.sin(a) * 69 + Math.cos(a) * off, 66, 1.6, -a)); // starts beyond the ring road
       }
     }
     addDecal(merge(edges), ROAD_EDGE, { style: 'concrete' });
@@ -112,9 +120,9 @@ export default {
       const a = (k / 8) * TAU, hw = k % 2 ? 4.5 : 6.5;
       if (k % 2) for (const s of [-1, 1]) {
         const off = (hw + 0.9) * s;
-        edges2.push(rect(Math.cos(a) * 70 - Math.sin(a) * off, Math.sin(a) * 70 + Math.cos(a) * off, 90, 1.6, -a));
+        edges2.push(rect(Math.cos(a) * 75 - Math.sin(a) * off, Math.sin(a) * 75 + Math.cos(a) * off, 80, 1.6, -a));
       }
-      for (let t = -hw + 0.8; t <= hw - 0.8; t += 1.3) zebra.push(rect(Math.cos(a) * 31.5 - Math.sin(a) * t, Math.sin(a) * 31.5 + Math.cos(a) * t, 3, 0.7, -a));
+      for (let t = -hw + 0.8; t <= hw - 0.8; t += 1.3) zebra.push(rect(Math.cos(a) * (RING_R + 2.5) - Math.sin(a) * t, Math.sin(a) * (RING_R + 2.5) + Math.cos(a) * t, 3, 0.7, -a));
       for (let r = 44; r < 118; r += 27) manholes.push(circle(Math.cos(a) * r - Math.sin(a) * 1.5, Math.sin(a) * r + Math.cos(a) * 1.5, 0.55, 10));
     }
     addDecal(merge(edges2), ROAD_EDGE, { style: 'concrete' });
@@ -163,7 +171,7 @@ export default {
     addDecal(merge([rect(72, -32, 30, 2.5), rect(72, -32, 2.5, 22)]), GRAVEL, { style: 'sand' });
     addDecal(circle(72, -32, 5, 20), GRAVEL, { style: 'sand' });
     // pavement plazas by the river (parking lots are added below once the routes exist)
-    addDecal(rect(-10, 45, 14, 6), '#eadfc0', { style: 'concrete' });
+    addDecal(rect(-14, 45, 14, 6), '#eadfc0', { style: 'concrete' }); // clear of the southern boulevard
     // --- Traffic routes (used by populate). Roundabout ring + the 8 boulevards (out and in) + boats on the Seine.
     const rt = (this.routes = {});
     const ringPts = (dir) => {
@@ -172,7 +180,7 @@ export default {
         const a = dir * (i / 48) * TAU;
         // bulge outwards around the Arc de Triomphe (at 0,-15) so it stays clear of the corridor
         const da = ((a - 1.5 * Math.PI) % TAU + 1.5 * TAU) % TAU - Math.PI;
-        const R = 23 + 6.5 * Math.exp(-((da / 0.44) ** 2));
+        const R = 23 + 5 * Math.exp(-((da / 0.44) ** 2));
         p.push([Math.cos(a) * R, Math.sin(a) * R]);
       }
       return p;
@@ -193,8 +201,8 @@ export default {
     }
     const river = [];
     for (let x = -100; x <= 100; x += 10) river.push([x, riverZ(x)]);
-    rt.boatE = ctx.addRoute(river, { loop: false, width: 9 });
-    rt.boatW = ctx.addRoute(river.slice().reverse(), { loop: false, width: 9 });
+    rt.boatE = ctx.addRoute(river, { loop: false, width: 9, network: 'water' });
+    rt.boatW = ctx.addRoute(river.slice().reverse(), { loop: false, width: 9, network: 'water' });
 
     // --- Parking: two car lots south of the Seine, a coach bay by the Champ de Mars, kerbside parking on the
     // four cardinal boulevards (both sides).
@@ -208,8 +216,23 @@ export default {
   },
 
   populate(ctx) {
-    const { place, randRange, rand, size: S } = ctx;
+    const { randRange, rand, size: S } = ctx;
     const TAU = Math.PI * 2;
+    // static props stay off the asphalt (movers may cross it): roundabout ring + the 8 boulevards, as in decorate()
+    const onRoad = (x, z, m) => {
+      if (Math.hypot(x, z) < RING_R + m && Math.hypot(x, z) > 19) return true;
+      for (let k = 0; k < 8; k++) {
+        const a = (k / 8) * TAU, c = Math.cos(a), sn = Math.sin(a);
+        if (x * c + z * sn > 20 && Math.abs(-x * sn + z * c) < (k % 2 ? 4.5 : 6.5) + m) return true;
+      }
+      return false;
+    };
+    const place = (n, x, z, rot, sc = 1, opts) => {
+      const proto = ctx.protos[n];
+      const isStatic = opts && 'move' in opts ? !opts.move : proto && !proto.move;
+      if (isStatic && onRoad(x, z, Math.min(1, (proto ? proto.radius * sc : 0) * 0.6))) return false;
+      return ctx.place(n, x, z, rot, sc, opts);
+    };
     const riverZ = (x) => 62 + Math.sin(x / 22) * 10;
     const scatter = (name, n, [x0, x1, z0, z1], sMin = 1, sMax = 1, tries = 30) => {
       for (let i = 0; i < n; i++) {
@@ -241,8 +264,8 @@ export default {
     place('arc', 0, -15, Math.PI / 2, 1);
     place('cathedral', 42, -72, 0.3, 1);
     place('carousel', 72, -32, 0, 1);
-    place('fountain', -30, 12, 0, 1);
-    place('fountain', 30, 12, 0, 1);
+    place('fountain', -37, 14, 0, 1);
+    place('fountain', 37, 14, 0, 1);
 
     // --- Parked cars: nose-in stalls in the lots, parallel along the boulevard kerbs, coaches in the coach bay
     const carNames = ['citroen', 'citroen2', 'citroen3', 'taxi', 'citroen', 'citroen3'];

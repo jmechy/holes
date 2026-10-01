@@ -14,10 +14,11 @@ export const holeUniforms = {
 export const timeUniform = { value: 0 };
 
 // Set by Game before a world is built.
-const gfx = { high: true, cloudShade: true };
-export function setGroundQuality(high, cloudShade) {
+const gfx = { high: true, cloudShade: true, water: {} };
+export function setGroundQuality(high, cloudShade, water = {}) {
   gfx.high = high;
   gfx.cloudShade = high && cloudShade;
+  gfx.water = water;
 }
 
 // Tileable smooth noise baked once on the CPU (R/G/B = three independent fbm fields, 16 lattice cells per tile) and
@@ -66,6 +67,8 @@ export const GROUND_STYLES = ['grass', 'dirt', 'sand', 'asphalt', 'concrete', 'r
 const NOISE_GLSL = `
 uniform float uTime;
 uniform sampler2D uNoise;
+uniform float uWaterWaveScale;
+uniform float uWaterContrast;
 float hash21(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
 // vnoise(p): smooth noise, ~1 lattice cell per unit of p (tile = 16 cells).  fbm: three cheap fetches.
 float vnoise(vec2 p) { return texture2D(uNoise, p * (1.0 / 16.0)).r; }
@@ -73,7 +76,7 @@ float fbm(vec2 p) {
   vec2 q = p * (1.0 / 16.0);
   return 0.62 * texture2D(uNoise, q).g + 0.38 * texture2D(uNoise, q * 3.07 + vec2(0.31, 0.17)).b;
 }
-float waveH(vec2 p) { vec2 t = vec2(uTime * 0.28, uTime * 0.11) * (1.0 / 16.0); return 1.2 * texture2D(uNoise, p * 0.45 * (1.0 / 16.0) + t).g + 0.6 * texture2D(uNoise, p * 1.3 * (1.0 / 16.0) - t * 2.0).b - 0.4; }
+float waveH(vec2 p) { p *= uWaterWaveScale; vec2 t = vec2(uTime * 0.28, uTime * 0.11) * (1.0 / 16.0); return 1.2 * texture2D(uNoise, p * 0.45 * (1.0 / 16.0) + t).g + 0.6 * texture2D(uNoise, p * 1.3 * (1.0 / 16.0) - t * 2.0).b - 0.4; }
 `;
 
 // Each body returns a colour multiplier for world position p (xz).
@@ -97,17 +100,26 @@ const STYLE_BODY = {
     return vec3(1.0 + nc * 0.75 + c * 0.5 + (vnoise(p * 6.0) - 0.5) * 0.24 + pit);`,
   voxel: `return vec3(0.9 + hash21(floor(p * 0.5)) * 0.1 + hash21(floor(p * 2.0)) * 0.07 + hash21(floor(p * 0.125)) * 0.05);`,
   water: `float h0 = waveH(p); float sp = pow(smoothstep(0.3, 0.9, vnoise(p * 3.0 + vec2(uTime * 1.3, uTime * 0.9))), 6.0) * 0.5;
-    return vec3(0.92 + (h0 - 0.5) * 0.55 + sp);`,
+    return vec3(0.92 + ((h0 - 0.5) * 0.55 + sp) * uWaterContrast);`,
 };
 
 function patch(material, style, water, noHoles) {
   const key = STYLE_BODY[style] ? style : 'none';
   const cloud = gfx.cloudShade;
+  const waterStyle = { ...gfx.water };
+  const shoreline = water && Number.isFinite(waterStyle.shoreZ);
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uHoles = holeUniforms.uHoles;
     shader.uniforms.uHoleCount = holeUniforms.uHoleCount;
     shader.uniforms.uTime = timeUniform;
     shader.uniforms.uNoise = { value: getNoiseTexture() };
+    shader.uniforms.uWaterWaveScale = { value: waterStyle.waveScale ?? 1 };
+    shader.uniforms.uWaterNormalStrength = { value: waterStyle.normalStrength ?? 2.4 };
+    shader.uniforms.uWaterContrast = { value: waterStyle.contrast ?? 1 };
+    if (shoreline) {
+      shader.uniforms.uWaterShore = { value: waterStyle.shoreZ };
+      shader.uniforms.uWaterFoam = { value: waterStyle.foamStrength ?? 0.5 };
+    }
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vHolePos;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvHolePos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
@@ -118,6 +130,8 @@ function patch(material, style, water, noHoles) {
 varying vec3 vHolePos;
 uniform vec3 uHoles[${MAX_HOLES}];
 uniform int uHoleCount;
+uniform float uWaterNormalStrength;
+${shoreline ? 'uniform float uWaterShore; uniform float uWaterFoam;' : ''}
 ${NOISE_GLSL}
 vec3 styleTint(vec2 p) { ${STYLE_BODY[key]} }
 float cloudShade(vec2 p) { return ${cloud ? '1.0 - 0.13 * smoothstep(0.5, 0.68, texture2D(uNoise, p * (0.011 / 16.0) + vec2(uTime * 0.02, uTime * 0.008) * (1.0 / 16.0)).g)' : '1.0'}; }`
@@ -134,6 +148,16 @@ float cloudShade(vec2 p) { return ${cloud ? '1.0 - 0.13 * smoothstep(0.5, 0.68, 
   }`
       )
       .replace('#include <color_fragment>', '#include <color_fragment>\n  diffuseColor.rgb *= styleTint(vHolePos.xz) * cloudShade(vHolePos.xz);');
+    if (shoreline) {
+      frag = frag.replace('#include <color_fragment>', `#include <color_fragment>
+  float shoreDistance = vHolePos.z - uWaterShore;
+  float tide = 0.85 + 0.55 * sin(uTime * 0.65 + vHolePos.x * 0.035) + 0.18 * sin(vHolePos.x * 0.17 + uTime * 0.28);
+  float strand = exp(-pow((shoreDistance - tide) / 0.24, 2.0));
+  float backwash = exp(-pow((shoreDistance - tide - 2.0) / 0.35, 2.0)) * 0.24;
+  float brokenFoam = 0.35 + 0.65 * smoothstep(0.35, 0.65, vnoise(vHolePos.xz * 1.7 - uTime * 0.16));
+  float foam = (strand + backwash) * brokenFoam * uWaterFoam;
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.87, 0.95, 0.95), clamp(foam, 0.0, 0.65));`);
+    }
     if (water && gfx.high) {
       // Ripple normals: finite differences of the animated height field, rotated into view space.
       frag = frag.replace(
@@ -142,13 +166,13 @@ float cloudShade(vec2 p) { return ${cloud ? '1.0 - 0.13 * smoothstep(0.5, 0.68, 
   {
     float w0 = waveH(vHolePos.xz);
     vec2 gr = vec2(waveH(vHolePos.xz + vec2(0.25, 0.0)) - w0, waveH(vHolePos.xz + vec2(0.0, 0.25)) - w0);
-    normal = normalize(normal + (viewMatrix * vec4(-gr.x, 0.0, -gr.y, 0.0)).xyz * 2.4);
+    normal = normalize(normal + (viewMatrix * vec4(-gr.x, 0.0, -gr.y, 0.0)).xyz * uWaterNormalStrength);
   }`
       );
     }
     shader.fragmentShader = frag;
   };
-  material.customProgramCacheKey = () => `holes-${key}-${gfx.high ? 'h' : 'l'}${cloud ? 'c' : ''}${water ? 'w' : ''}${noHoles ? 'n' : ''}`;
+  material.customProgramCacheKey = () => `holes-${key}-${gfx.high ? 'h' : 'l'}${cloud ? 'c' : ''}${water ? 'w' : ''}${noHoles ? 'n' : ''}${shoreline ? 's' : ''}`;
   return material;
 }
 
@@ -157,7 +181,7 @@ function litMaterial(color, style, extra = {}, noHoles = false) {
   const base = { color, ...extra };
   // Only water needs PBR (glossy highlights); everything flat uses the cheaper Lambert model even on High.
   const m = gfx.high && (water || extra.vertexColors)
-    ? new THREE.MeshStandardMaterial({ roughness: water ? 0.22 : 0.95, metalness: water ? 0.15 : 0, ...base })
+    ? new THREE.MeshStandardMaterial({ roughness: water ? (gfx.water.roughness ?? 0.22) : 0.95, metalness: water ? (gfx.water.metalness ?? 0.15) : 0, ...base })
     : new THREE.MeshLambertMaterial(base);
   return patch(m, style, water, noHoles);
 }

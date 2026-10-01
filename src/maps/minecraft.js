@@ -16,13 +16,21 @@ export default {
   fogColor: '#a9dcff',
   lightColor: '#fffbe8',
   ambient: 0.65,
+  // Bright cheerful noon: near-overhead white sun, crisp short shadows, vivid sky fill.
+  lighting: {
+    sunDirection: [25, 85, 18], sunColor: '#fffbe8', sunIntensity: 0.8 * Math.PI,
+    hemiSkyColor: '#c4e6ff', hemiGroundColor: '#8abf62', hemiIntensity: 0.62 * Math.PI,
+    shadowOpacity: 0.62, shadowRadius: 1.4, environmentIntensity: 0.2, exposure: 1.02,
+  },
+  postProcessing: { aoRadius: 0.3, aoStrength: 0.13 },
   groundStyle: 'voxel',
   edge: 'blocks',
   sky: { top: '#4f9cf0', horizon: '#bfe6ff' },
   clouds: true,
   backdrop: [
-    { type: 'hills', color: '#4c9a38', color2: '#3a7a30' },
-    { type: 'mountains', side: 'north', color: '#8a8a8a', color2: '#f4f4f4' },
+    // Terraced block hills with block trees and lakes; taller peaks to the north.
+    { type: 'voxel', color: '#5fae3f', color2: '#7a5a3a' },
+    { type: 'voxel', side: 'north', color: '#5fae3f', color2: '#7a5a3a', tall: 1.8 },
   ],
   buildProtos,
 
@@ -115,7 +123,17 @@ export default {
   },
 
   populate(ctx) {
-    const { place, randRange, rand, size: S } = ctx;
+    const { randRange, rand, size: S } = ctx;
+    // static props stay off the dirt paths and the cobble road (rectangles as painted in decorate(); [cx, cz, w, d])
+    const PATHS = [[0, 0, S * 2, 4], [0, 0, 4, S * 2], [60, 55, 4, 60], [60, 30, 60, 4], [-45, -30, 4, 60], [-45, -30, 80, 4],
+      [72, -48, 5, 40], [72, -66, 18, 8], [74, 66, 44, 5]];
+    const onRoad = (x, z, m) => PATHS.some(([cx, cz, w, d]) => Math.abs(x - cx) < w / 2 + m && Math.abs(z - cz) < d / 2 + m);
+    const place = (n, x, z, rot, sc = 1, opts) => {
+      const proto = ctx.protos[n];
+      const isStatic = opts && 'move' in opts ? !opts.move : proto && !proto.move;
+      if (isStatic && onRoad(x, z, Math.min(1, (proto ? proto.radius * sc : 0) * 0.6))) return false;
+      return ctx.place(n, x, z, rot, sc, opts);
+    };
     const inPond = (x, z) => Math.hypot(x - POND.x, z - POND.z) < POND.r + 1.5;
     const put = (name, x, z, rot, sc = 1) => !inPond(x, z) && place(name, x, z, rot, sc);
     const scatter = (name, n, [x0, x1, z0, z1], sMin = 1, sMax = 1, tries = 30) => {

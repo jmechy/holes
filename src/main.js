@@ -20,11 +20,15 @@ const hud = createHUD(document.getElementById('hud-root'), {
   onResume: () => game.resume(),
   onRestart: () => game.restart(),
   onMenu: () => toMenu(),
+  onZoomIn: () => game.zoomTestView(1 / 1.2),
+  onZoomOut: () => game.zoomTestView(1.2),
+  onFitView: () => game.fitTestView(),
 });
 const input = new Input(canvas, document.getElementById('joy-root'), { onPause: () => game.togglePause() });
 game = new Game(canvas, { hud, input });
 
 function toMenu(view = 'main') {
+  playToken++;
   game.stop();
   session = null;
   screenRoot.classList.remove('clear');
@@ -33,18 +37,40 @@ function toMenu(view = 'main') {
     onPick: (map) => play(map, 'pick'),
     onTime: (map) => play(map, 'time'),
     onArcade: (map) => play(map, 'arcade'),
+    onTest: (map) => play(map, 'test'),
   }, view);
 }
 
-function play(map, mode, advIndex = 0) {
+let playToken = 0;
+async function play(map, mode, advIndex = 0) {
   audio.unlock();
   const s = getSettings();
   session = { map, mode, advIndex };
   hideScreen(screenRoot);
+  const token = ++playToken;
+  if (map.preload) { // maps built from real models load them before buildProtos() runs
+    screenRoot.innerHTML = '<div class="screen menu loading"><h2>Loading\u2026</h2><p class="hint">Fetching ' + map.name + ' models</p></div>';
+    try {
+      await map.preload();
+    } catch (e) {
+      console.error(e);
+      if (token !== playToken) return;
+      toMenu();
+      const msg = document.createElement('div');
+      msg.className = 'load-error';
+      msg.textContent = 'Could not load ' + map.name + ': ' + (e?.message ?? e);
+      screenRoot.appendChild(msg);
+      setTimeout(() => msg.remove(), 6000);
+      return;
+    }
+    if (token !== playToken) return; // user moved on while loading
+    hideScreen(screenRoot);
+  }
   game.start(map, { mode, goal: s.goal, rivals: s.rivals, rivalCount: s.rivalCount });
 }
 
 game.onFinish = (result) => {
+  if (!session || session.mode === 'test') return;
   const { map, mode, advIndex } = session;
   const extra = { newBest: false, best: 0, hasNext: false, beatAll: false };
   if (mode === 'time') {

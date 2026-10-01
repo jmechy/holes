@@ -1,7 +1,8 @@
 // Blocky World object prototypes: voxel style, box() only. Animals face +X.
 // "More detail" here means more voxels: pixel-art faces, multi-tone speckled textures built from small boxes,
 // leaf/log block patterns, planked walls, brick rings, carved windows and doors.
-import { box, makeProto } from './build.js';
+import { box as rawBox, makeProto, articulate } from './build.js';
+import { applyModelFinishes } from './ModelFinishes.js';
 
 const C = {
   grass: '#5cae3c', grassTop: '#6cc04a', dirt: '#8a5a34', dirtD: '#6f4526', stone: '#8c8c8c', stoneD: '#6e6e6e',
@@ -27,6 +28,19 @@ const rng = (seed) => {
   return () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
 };
 
+// Sparingly textured blocks: a low textureStrength gives subtle grain while the crisp voxel look stays intact.
+// The surface layer is picked from the block colour (greens foliage, browns wood, greys stone, pale cyan glass, pinks/whites cloth).
+const surfaceOf = (c) => {
+  const n = parseInt(c.slice(1), 16), r = (n >> 16 & 255) / 255, g = (n >> 8 & 255) / 255, b = (n & 255) / 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), sat = mx ? (mx - mn) / mx : 0;
+  if (sat < 0.1) return mx > 0.85 ? 'fabric' : 'stone';
+  if (g >= r && g >= b) return b > r && mx > 0.8 ? 'glass' : 'foliage';
+  if (b > r) return mx > 0.8 ? 'glass' : 'paint';
+  if (r >= g && g >= b && sat > 0.3 && mx < 0.75) return 'wood';
+  if (r > 0.85 && b > 0.45 && g < b + 0.25) return 'fabric';
+  return 'paint';
+};
+const box = (w, h, d, c, o = {}) => rawBox(w, h, d, c, { surface: surfaceOf(c), textureStrength: 0.5, ...o });
 const B = (w, h, d, c, x, y, z) => box(w, h, d, c, { x, y, z }); // y = centre
 
 /**
@@ -98,9 +112,11 @@ function quad({ bodyC, bodyD = shade(bodyC, 0.85), headC, legC, hoofC = null, le
   if (spots) p.push(...speck(0, legH + hgt / 2, 0, len, hgt, wid, spots.cols, spots.n, seed + 5, { px: spots.px }));
   const lx = len / 2 - Math.max(0.16, wid * 0.22), lz = wid / 2 - Math.max(0.1, wid * 0.15), lw = Math.max(0.22, wid * 0.26);
   const hoofH = hoofC ? Math.min(0.14, legH * 0.28) : 0;
+  // Quadruped gait: diagonal pairs share a phase (front-left + back-right = 0, front-right + back-left = 1; left is -Z).
   [[lx, lz], [lx, -lz], [-lx, lz], [-lx, -lz]].forEach(([x, z]) => {
-    p.push(B(lw, legH - hoofH + 0.02, lw, legC, x, hoofH + (legH - hoofH) / 2, z));
-    if (hoofC) p.push(B(lw + 0.02, hoofH, lw + 0.02, hoofC, x, hoofH / 2, z));
+    const hip = [x, legH, z], o = { phase: (x > 0) === (z < 0) ? 0 : 1, hip };
+    p.push(articulate(B(lw, legH - hoofH + 0.02, lw, legC, x, hoofH + (legH - hoofH) / 2, z), 'leg', hip, o));
+    if (hoofC) p.push(articulate(B(lw + 0.02, hoofH, lw + 0.02, hoofC, x, hoofH / 2, z), 'leg', hip, o));
   });
   const hx = len / 2 + headS / 2 - 0.05, hy = legH + hgt + headS * 0.1;
   p.push(B(headS, headS, headS * 1.05, headC, hx, hy, 0));
@@ -115,26 +131,32 @@ function quad({ bodyC, bodyD = shade(bodyC, 0.85), headC, legC, hoofC = null, le
   else if (ears === 'side') for (const sg of [1, -1]) p.push(B(headS * 0.18, headS * 0.18, headS * 0.26, earC, hx - headS * 0.05, hy + headS * 0.32, sg * (headS * 0.5 + 0.07)));
   else if (ears === 'point') for (const sg of [1, -1]) p.push(B(headS * 0.16, headS * 0.34, headS * 0.18, earC, hx - headS * 0.1, hy + headS * 0.62, sg * headS * 0.3), B(headS * 0.08, headS * 0.2, headS * 0.1, C.pinkD, hx - headS * 0.02, hy + headS * 0.6, sg * headS * 0.3));
   if (horns) for (const sg of [1, -1]) p.push(B(headS * 0.13, headS * 0.13, headS * 0.28, horns, hx - headS * 0.1, hy + headS * 0.5, sg * headS * 0.62), B(headS * 0.12, headS * 0.28, headS * 0.13, horns, hx - headS * 0.1, hy + headS * 0.66, sg * headS * 0.72));
-  if (tail) p.push(B(tail.l, tail.h, tail.w, tail.c, -len / 2 - tail.l / 2 + 0.03, legH + hgt * (tail.at ?? 0.85), 0), ...(tail.tip ? [B(tail.l * 0.5, tail.h * 1.15, tail.w * 1.15, tail.tip, -len / 2 - tail.l + 0.03, legH + hgt * (tail.at ?? 0.85), 0)] : []));
+  if (tail) {
+    const pivot = [-len / 2, legH + hgt * (tail.at ?? 0.85), 0];
+    p.push(articulate(B(tail.l, tail.h, tail.w, tail.c, -len / 2 - tail.l / 2 + 0.03, legH + hgt * (tail.at ?? 0.85), 0), 'tail', pivot),
+      ...(tail.tip ? [articulate(B(tail.l * 0.5, tail.h * 1.15, tail.w * 1.15, tail.tip, -len / 2 - tail.l + 0.03, legH + hgt * (tail.at ?? 0.85), 0), 'tail', pivot)] : []));
+  }
   return p.concat(extra);
 }
 
 function humanoid({ skin, skinD = shade(skin, 0.85), shirt, shirtD = shade(shirt, 0.82), pants, pantsD = shade(pants, 0.82), shoe = C.black, hair = null,
-  armsFwd = false, seed = 3, eyes = {}, torn = false, bodyH = 0.8, headS = 0.5, legH = 0.8, mouth = '#3a2a22', extra = [] }) {
+  armsFwd = false, swingArms = true, seed = 3, eyes = {}, torn = false, bodyH = 0.8, headS = 0.5, legH = 0.8, mouth = '#3a2a22', extra = [] }) {
   const p = [];
   const top = legH + bodyH;
   for (const sg of [1, -1]) {
-    p.push(...texBox(0.26, legH - 0.12, 0.26, pants, [pantsD], 6, seed + sg, 0, 0.12 + (legH - 0.12) / 2, sg * 0.14, { px: 0.09 }));
-    p.push(B(0.34, 0.12, 0.3, shoe, 0.04, 0.06, sg * 0.14));
+    const hip = [0, legH, sg * 0.14], o = { side: sg, hip };
+    p.push(...texBox(0.26, legH - 0.12, 0.26, pants, [pantsD], 6, seed + sg, 0, 0.12 + (legH - 0.12) / 2, sg * 0.14, { px: 0.09 }).map((g) => articulate(g, 'leg', hip, o)));
+    p.push(articulate(B(0.34, 0.12, 0.3, shoe, 0.04, 0.06, sg * 0.14), 'leg', hip, o));
   }
   p.push(...texBox(0.3, bodyH, 0.54, shirt, [shirtD, shade(shirt, 1.12)], 12, seed + 4, 0, legH + bodyH / 2, 0, { px: 0.1, faces: 'xXzZ' }));
   p.push(B(0.32, 0.1, 0.56, pantsD, 0, legH + 0.05, 0)); // belt
   if (torn) p.push(B(0.03, 0.22, 0.2, skin, 0.16, legH + 0.5, 0.12), B(0.03, 0.14, 0.14, skinD, 0.16, legH + 0.3, -0.14));
   for (const sg of [1, -1]) {
+    const arm = (...g) => p.push(...g.map((x) => (swingArms ? articulate(x, 'arm', [0, top - 0.1, sg * 0.4], { side: sg }) : x)));
     if (armsFwd) {
-      p.push(B(0.42, 0.27, 0.27, shirt, 0.24, top - 0.16, sg * 0.4), B(0.4, 0.26, 0.26, skin, 0.65, top - 0.16, sg * 0.4), B(0.06, 0.28, 0.28, skinD, 0.86, top - 0.16, sg * 0.4));
+      arm(B(0.42, 0.27, 0.27, shirt, 0.24, top - 0.16, sg * 0.4), B(0.4, 0.26, 0.26, skin, 0.65, top - 0.16, sg * 0.4), B(0.06, 0.28, 0.28, skinD, 0.86, top - 0.16, sg * 0.4));
     } else {
-      p.push(B(0.25, 0.42, 0.25, shirt, 0, top - 0.24, sg * 0.4), B(0.24, 0.42, 0.24, skin, 0, top - 0.64, sg * 0.4));
+      arm(B(0.25, 0.42, 0.25, shirt, 0, top - 0.24, sg * 0.4), B(0.24, 0.42, 0.24, skin, 0, top - 0.64, sg * 0.4));
     }
   }
   const hy = top + headS / 2;
@@ -240,7 +262,8 @@ function voxTree({ trunkH, trunkW, cell, leafCols, layers, y0, trunkC = C.oak, s
 
 export function buildProtos() {
   const P = {};
-  const add = (name, parts, opts) => (P[name] = makeProto(name, parts.flat(), opts));
+  const SWAY = { sapling: 'tree', oakTree: 'tree', oakTreeBig: 'tree', birchTree: 'tree', cherryTree: 'tree', spruceTree: 'tree' };
+  const add = (name, parts, opts = {}) => (P[name] = applyModelFinishes(makeProto(name, parts.flat(), { sway: SWAY[name], ...opts }), 'voxel'));
 
   // ---------- tiny ----------
   add('flowerRed', flower(C.red, C.yellow, 1), { value: 0.12 });
@@ -284,7 +307,8 @@ export function buildProtos() {
     p.push(B(0.6, 0.42, 0.42, C.white, 0, 0.5, 0), B(0.5, 0.12, 0.44, '#e6e6e6', 0, 0.34, 0), B(0.2, 0.2, 0.3, '#f8f8f8', 0.28, 0.6, 0));
     for (const sg of [1, -1]) {
       p.push(B(0.36, 0.26, 0.06, '#dcdcdc', -0.02, 0.55, sg * 0.24), B(0.22, 0.14, 0.07, '#c8c8c8', -0.08, 0.5, sg * 0.24));
-      p.push(B(0.05, 0.3, 0.05, C.orange, 0, 0.15, sg * 0.1), B(0.14, 0.05, 0.1, C.orange, 0.05, 0.03, sg * 0.1));
+      const hip = [0, 0.3, sg * 0.1], o = { side: sg, hip };
+      p.push(articulate(B(0.05, 0.3, 0.05, C.orange, 0, 0.15, sg * 0.1), 'leg', hip, o), articulate(B(0.14, 0.05, 0.1, C.orange, 0.05, 0.03, sg * 0.1), 'leg', hip, o));
     }
     p.push(B(0.24, 0.3, 0.3, C.white, 0.42, 0.85, 0), B(0.12, 0.06, 0.18, C.red, 0.42, 1.04, 0), B(0.08, 0.06, 0.12, C.red, 0.4, 1.09, 0));
     p.push(B(0.14, 0.08, 0.14, C.orange, 0.6, 0.83, 0), B(0.08, 0.1, 0.08, C.red, 0.57, 0.72, 0));
@@ -333,7 +357,10 @@ export function buildProtos() {
     const p = [];
     const g = [C.creeper, C.creeperD, '#5fc25c', '#3c9440'];
     p.push(...texBox(0.6, 0.95, 0.6, C.creeper, g, 34, 60, 0, 1.03, 0, { px: 0.1 }));
-    for (const [x, z] of [[0.24, 0.24], [-0.24, 0.24], [0.24, -0.24], [-0.24, -0.24]]) p.push(...texBox(0.28, 0.56, 0.28, C.creeperD, [C.creeper, '#2a6e2e'], 6, 61 + x * 10 + z * 20, x, 0.28, z, { px: 0.09, faces: 'xXzZ' }));
+    for (const [x, z] of [[0.24, 0.24], [-0.24, 0.24], [0.24, -0.24], [-0.24, -0.24]]) {
+      const hip = [x, 0.56, z], o = { phase: (x > 0) === (z < 0) ? 0 : 1, hip };
+      p.push(...texBox(0.28, 0.56, 0.28, C.creeperD, [C.creeper, '#2a6e2e'], 6, 61 + x * 10 + z * 20, x, 0.28, z, { px: 0.09, faces: 'xXzZ' }).map((g) => articulate(g, 'leg', hip, o)));
+    }
     p.push(...texBox(0.66, 0.66, 0.66, C.creeper, g, 34, 62, 0, 1.83, 0, { px: 0.11 }));
     const fx = 0.345;
     // the face: two square eyes, nose bridge, frown
@@ -346,7 +373,7 @@ export function buildProtos() {
     eyes: { eye: '#1e1e1e', pupil: '#0a0a12', brow: '#2f6a2b' }, mouth: '#2a4a26' }), { value: 1.5 });
   add('skeleton', (() => {
     const p = humanoid({ skin: '#e8e8e0', skinD: '#c8c8c0', shirt: '#dcdcd4', shirtD: '#a8a8a0', pants: '#cfcfc8', shoe: '#b0b0a8', seed: 80, legH: 0.85, bodyH: 0.75,
-      eyes: { eye: '#1e1e1e', pupil: '#1e1e1e', eyeY: 0.1, eyeZ: 0.22 }, mouth: '#8a8a82' });
+      eyes: { eye: '#1e1e1e', pupil: '#1e1e1e', eyeY: 0.1, eyeZ: 0.22 }, mouth: '#8a8a82', swingArms: false });
     // ribs on the chest + arms as thin bones + bow in the hand
     for (let i = 0; i < 4; i++) p.push(B(0.03, 0.06, 0.46, '#7a7a72', 0.16, 0.85 + 0.12 + i * 0.15, 0));
     p.push(B(0.03, 0.55, 0.06, '#7a7a72', 0.16, 1.28, 0));
@@ -362,6 +389,10 @@ export function buildProtos() {
     p.push(...face(0, 1.3, 0, 0.56, { eye: '#eaf6ee', pupil: '#2a8a3a', brow: '#3a2a20', eyeY: 0.08, eyeZ: 0.2 }));
     p.push(B(0.16, 0.3, 0.16, '#b58862', 0.36, 1.2, 0), B(0.12, 0.08, 0.14, '#a07852', 0.42, 1.06, 0));
     p.push(B(0.04, 0.05, 0.3, '#3a2a20', 0.29, 1.4, 0), B(0.6, 0.12, 0.6, '#5a3e22', 0, 1.62, 0));
+    for (const sg of [1, -1]) { // boots peek out under the robe and swing as the villager walks
+      const hip = [0, 0.5, sg * 0.17], o = { side: sg, hip };
+      p.push(articulate(B(0.56, 0.12, 0.22, '#3a2a20', 0.1, 0.06, sg * 0.17), 'leg', hip, o));
+    }
     return p;
   })(), { value: 1.4 });
   add('craftingTable', (() => {
@@ -450,7 +481,10 @@ export function buildProtos() {
     // coal load
     for (const [x, z, y] of [[0.2, 0.1, 0.55], [-0.2, -0.15, 0.6], [0.05, -0.2, 0.7], [-0.3, 0.2, 0.55], [0.3, -0.1, 0.62]]) p.push(B(0.3, 0.3, 0.3, C.coal, x, y + 0.15, z));
     p.push(B(0.12, 0.12, 0.12, '#f0f0f0', 0.12, 0.98, 0.05));
-    for (const [x, z] of [[0.4, 0.42], [-0.4, 0.42], [0.4, -0.42], [-0.4, -0.42]]) p.push(B(0.26, 0.26, 0.1, '#3a3a3a', x, 0.2, z * 1.1), B(0.1, 0.1, 0.12, '#c8c8c8', x, 0.2, z * 1.1));
+    for (const [x, z] of [[0.4, 0.42], [-0.4, 0.42], [0.4, -0.42], [-0.4, -0.42]]) {
+      const pivot = [x, 0.2, z * 1.1], o = { radius: 0.15, front: x > 0 };
+      p.push(articulate(B(0.26, 0.26, 0.1, '#3a3a3a', x, 0.2, z * 1.1), 'wheel', pivot, o), articulate(B(0.1, 0.1, 0.12, '#c8c8c8', x, 0.2, z * 1.1), 'wheel', pivot, o));
+    }
     return p;
   })(), { value: 1.5 });
 

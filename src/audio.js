@@ -74,6 +74,13 @@ export const audio = {
     blip(520, 0.1, 'triangle', 0.12);
     blip(780, 0.14, 'triangle', 0.12, 0.08);
   },
+  /** Bright rising chime for a level-up: a C-major arpeggio with a soft shimmer tail. */
+  levelUpChime() {
+    [784, 988, 1175, 1568].forEach((f, i) => {
+      blip(f, 0.32, 'triangle', 0.11, i * 0.07);
+      blip(f * 2, 0.22, 'sine', 0.035, i * 0.07 + 0.01);
+    });
+  },
   levelComplete() {
     [523, 659, 784, 1047].forEach((f, i) => blip(f, 0.22, 'triangle', 0.16, i * 0.12));
   },

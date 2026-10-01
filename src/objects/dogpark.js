@@ -1,6 +1,9 @@
 // Dog Park object prototypes. Dogs/vehicles are length-along-X, head toward +X.
 // Rounded shapes everywhere: capsule bodies, sphere heads, lathe props, rbox furniture, extruded arches and gables.
-import { box, cyl, cone, sphere, torus, rbox, capsule, lathe, extrude, makeProto } from './build.js';
+import * as BUILD from './build.js';
+import { makeProto, articulate } from './build.js';
+import { recessedWindow } from './ModelDetails.js';
+import { applyModelFinishes } from './ModelFinishes.js';
 
 const C = {
   white: '#f5f5f5', bone: '#f4ecd6', black: '#1e1e1e', dark: '#333338', gray: '#9aa0a6', lgray: '#c4c9ce',
@@ -11,6 +14,28 @@ const C = {
   skin3: '#8a5a3a', water: '#6cc4f0', foam: '#e8f8ff', roof: '#c8442f', metal: '#b8bec4', glass: '#a8dcf4',
   leafA: '#3fa34a', leafB: '#2f8a3c', leafC: '#56b85a', trunk: '#7a4a28', trunkD: '#5e3a20',
 };
+// Every primitive gets a surface: from `DEF` while a dog/person is being built (soft fur/fabric), otherwise from its colour
+// (per-part opts override both). Unmapped colours are painted plastic/metal props.
+const PALETTE = new Map([
+  [C.wood, 'wood'], [C.dwood, 'wood'], [C.trunk, 'wood'], [C.trunkD, 'wood'], ['#6a4030', 'wood'], ['#d8ac68', 'wood'], ['#e0b070', 'wood'], ['#c8905a', 'wood'], [C.tan, 'wood'],
+  [C.leafA, 'foliage'], [C.leafB, 'foliage'], [C.leafC, 'foliage'], [C.pink, 'foliage'], ['#f0a0c0', 'foliage'], ['#f8c0d8', 'foliage'], ['#e888b0', 'foliage'],
+  [C.glass, 'glass'], [C.water, 'glass'], ['#a8dcf4', 'glass'], ['#9ad0e8', 'glass'], [C.foam, 'fabric'],
+  [C.metal, 'metal'], [C.dark, 'metal'], [C.lgray, 'stone'], [C.gray, 'stone'], [C.bone, 'stone'], ['#232326', 'rubber'],
+]);
+const STRENGTH = { wood: 0.6, foliage: 0.6, glass: 0.2, metal: 0.4, stone: 0.6, rubber: 0.5, fabric: 0.45, paint: 0.3 };
+let DEF = null;
+const surfaced = (fn, ci) => (...a) => {
+  const surface = DEF?.surface ?? PALETTE.get(a[ci]) ?? 'paint';
+  a[ci + 1] = { surface, textureStrength: DEF?.textureStrength ?? STRENGTH[surface], ...(a[ci + 1] ?? {}) };
+  return fn(...a);
+};
+const box = surfaced(BUILD.box, 3), rbox = surfaced(BUILD.rbox, 3), cyl = surfaced(BUILD.cyl, 3), cone = surfaced(BUILD.cone, 2);
+const sphere = surfaced(BUILD.sphere, 1), torus = surfaced(BUILD.torus, 2), capsule = surfaced(BUILD.capsule, 2);
+const lathe = surfaced(BUILD.lathe, 1), extrude = surfaced(BUILD.extrude, 2);
+/** Run a builder with a default surface for every primitive (soft fur, cloth). */
+const withDefault = (def, fn) => { DEF = def; try { return fn(); } finally { DEF = null; } };
+const FUR = { surface: 'fabric', textureStrength: 0.5 };
+const CLOTH = { surface: 'fabric', textureStrength: 0.4 };
 const PI = Math.PI;
 const B = (w, h, d, c, x, y, z, o = {}) => box(w, h, d, c, { x, y, z, ...o });
 const RB = (w, h, d, c, x, y, z, o = {}) => rbox(w, h, d, c, { x, y, z, segments: 1, ...o });
@@ -31,7 +56,8 @@ function limb(x0, y0, x1, y1, r, c, o = {}) {
  * Dog: capsule torso, sphere head + muzzle, neck, haunches, tapered legs with paws, floppy/pointy/puff ears,
  * collar with tag, tails of several kinds. Dimensions are before the global scale k.
  */
-function dog({ len, hgt, wid, legH, headS, body, head = body, ear, legs = body, tail = body, snoutC = head, chest = null, belly = null,
+function dog(o) { return withDefault(FUR, () => dogParts(o)); }
+function dogParts({ len, hgt, wid, legH, headS, body, head = body, ear, legs = body, tail = body, snoutC = head, chest = null, belly = null,
   earType = 'floppy', tailType = 'sabre', muzzleL = 0.4, collar = null, spots = 0, mask = null, k = 1, lod = 1, fluff = false, tongue = false,
   eyeC = '#2a1a10', brow = null, tailUp = 1.1, cheeks = null }) {
   const p = [];
@@ -56,14 +82,17 @@ function dog({ len, hgt, wid, legH, headS, body, head = body, ear, legs = body, 
 
   // legs: tapered cylinder + paw
   const lx = len / 2 - wid * 0.3, lz = wid / 2 - legR * 1.1;
+  // Quadruped gait: diagonal pairs share a phase (front-left + back-right = 0, front-right + back-left = 1; left is -Z).
   [[lx, lz], [lx, -lz], [-lx + wid * 0.1, lz], [-lx + wid * 0.1, -lz]].forEach(([x, z]) => {
+    const hip = [x, fluff ? legH + 0.05 : legH + 0.04 + legR * 0.4, z], o = { phase: (x > 0) === (z < 0) ? 0 : 1, hip };
+    const leg = (g) => p.push(articulate(g, 'leg', hip, o));
     if (fluff) {
-      p.push(cyl(legR * 0.8, legR * 0.9, legH + 0.05, tail, { x, y: (legH + 0.05) / 2, z, segments: 7 }));
-      p.push(sphere(legR * 1.5, body, { x, y: legH * 0.25, z, segments: 7, rings: 5 }));
-      p.push(sphere(legR * 1.3, body, { x, y: legH * 0.78, z, segments: 7, rings: 5 }));
+      leg(cyl(legR * 0.8, legR * 0.9, legH + 0.05, tail, { x, y: (legH + 0.05) / 2, z, segments: 7 }));
+      leg(sphere(legR * 1.5, body, { x, y: legH * 0.25, z, segments: 7, rings: 5 }));
+      leg(sphere(legR * 1.3, body, { x, y: legH * 0.78, z, segments: 7, rings: 5 }));
     } else {
-      p.push(cyl(legR * 0.85, legR, legH + 0.04, legs, { x, y: (legH + 0.04) / 2 + legR * 0.4, z, segments: seg }));
-      p.push(sphere(legR * 1.25, shade(legs, 0.96), { x: x + legR * 0.35, y: legR * 0.55, z, sy: 0.6, sx: 1.25, segments: 6, rings: 4 }));
+      leg(cyl(legR * 0.85, legR, legH + 0.04, legs, { x, y: (legH + 0.04) / 2 + legR * 0.4, z, segments: seg }));
+      leg(sphere(legR * 1.25, shade(legs, 0.96), { x: x + legR * 0.35, y: legR * 0.55, z, sy: 0.6, sx: 1.25, segments: 6, rings: 4 }));
     }
   });
 
@@ -111,15 +140,16 @@ function dog({ len, hgt, wid, legH, headS, body, head = body, ear, legs = body, 
     for (const sg of [1, -1]) p.push(sphere(headS * 0.22, ec, { x: hx - headS * 0.12, y: hy + headS * 0.32, z: sg * headS * 0.38, sx: 0.5, sy: 1.1, segments: 7, rings: 5 }));
   }
   // tail
-  const tx = -len / 2 + 0.02, ty = top - hgt * 0.15;
-  if (tailType === 'sabre') p.push(capsule(0.06 + wid * 0.05, len * 0.3, tail, { x: tx - len * 0.11, y: ty + len * 0.12, rz: tailUp, segments: 7, caps: 2 }));
-  else if (tailType === 'otter') p.push(cyl(0.05, 0.11 + wid * 0.08, len * 0.4, tail, { x: tx - len * 0.12, y: ty + len * 0.06, rz: tailUp * 0.7 + 0.3, segments: 8 }));
+  const tx = -len / 2 + 0.02, ty = top - hgt * 0.15, tp = [];
+  if (tailType === 'sabre') tp.push(capsule(0.06 + wid * 0.05, len * 0.3, tail, { x: tx - len * 0.11, y: ty + len * 0.12, rz: tailUp, segments: 7, caps: 2 }));
+  else if (tailType === 'otter') tp.push(cyl(0.05, 0.11 + wid * 0.08, len * 0.4, tail, { x: tx - len * 0.12, y: ty + len * 0.06, rz: tailUp * 0.7 + 0.3, segments: 8 }));
   else if (tailType === 'curl') {
-    p.push(limb(tx, ty, tx - len * 0.08, ty + len * 0.2, 0.09, tail), limb(tx - len * 0.08, ty + len * 0.2, tx + len * 0.05, ty + len * 0.38, 0.08, tail));
-    p.push(Sl(0.12, tail, { x: tx + len * 0.07, y: ty + len * 0.4 }));
+    tp.push(limb(tx, ty, tx - len * 0.08, ty + len * 0.2, 0.09, tail), limb(tx - len * 0.08, ty + len * 0.2, tx + len * 0.05, ty + len * 0.38, 0.08, tail));
+    tp.push(Sl(0.12, tail, { x: tx + len * 0.07, y: ty + len * 0.4 }));
   } else if (tailType === 'pom') {
-    p.push(cyl(0.04, 0.05, len * 0.2, legs, { x: tx - 0.06, y: ty + 0.1, rz: 0.8, segments: 6 }), sphere(0.15 + len * 0.06, tail, { x: tx - len * 0.12, y: ty + len * 0.15, segments: 8, rings: 6 }));
-  } else if (tailType === 'stub') p.push(sphere(0.1 + len * 0.05, tail, { x: tx - 0.06, y: ty + 0.06, segments: 7, rings: 5 }));
+    tp.push(cyl(0.04, 0.05, len * 0.2, legs, { x: tx - 0.06, y: ty + 0.1, rz: 0.8, segments: 6 }), sphere(0.15 + len * 0.06, tail, { x: tx - len * 0.12, y: ty + len * 0.15, segments: 8, rings: 6 }));
+  } else if (tailType === 'stub') tp.push(sphere(0.1 + len * 0.05, tail, { x: tx - 0.06, y: ty + 0.06, segments: 7, rings: 5 }));
+  p.push(...tp.map((g) => articulate(g, 'tail', [tx, ty, 0], { amp: 1.3 })));
   // spots (dalmatian): flattened dots pressed into the coat
   const sr = (i) => { const v = Math.sin(i * 91.7 + 13.1) * 43758.5453; return v - Math.floor(v); };
   for (let i = 0; i < spots; i++) {
@@ -129,32 +159,46 @@ function dog({ len, hgt, wid, legH, headS, body, head = body, ear, legs = body, 
     p.push(sphere(0.06 + sr(i + 7) * 0.06, C.black, { x, y: legH + hgt / 2 + yc * hgt * 0.46, z: zc * wid * 0.46, sx: 1.1, sy: 0.35, sz: 1.0, rx: 0, segments: 5, rings: 3, ry: 0, rz: 0 }));
   }
   for (let i = 0; i < Math.floor(spots / 2); i++) p.push(Sl(0.05 + sr(i + 70) * 0.035, C.black, { x: hx - 0.05 + sr(i + 33) * 0.12, y: hy + headS * 0.35, z: (sr(i + 3) - 0.5) * headS * 0.6, sy: 0.4 }));
-  return p.map((g) => g.scale(k, k, k));
+  return p.map((g) => {
+    g.scale(k, k, k);
+    const art = g.userData.articulation;
+    if (art) { art.pivot = art.pivot.map((v) => v * k); if (art.hip) art.hip = art.hip.map((v) => v * k); }
+    return g;
+  });
 }
 
-function person({ shirt, pants, hair, skin, hairStyle = 'short', dress = false, leash = false, hat = null, shoe = '#3a3a44', bag = null, glasses = false, stripe = null }) {
+function person(o) { return withDefault(CLOTH, () => personParts(o)); }
+function personParts({ shirt, pants, hair, skin, hairStyle = 'short', dress = false, leash = false, hat = null, shoe = '#3a3a44', bag = null, glasses = false, stripe = null }) {
   const p = [];
   const sc = skin;
   if (dress) {
-    p.push(lathe([[0.4, 0.22], [0.4, 0.28], [0.32, 0.48], [0.22, 0.7], [0.17, 0.82]], pants, { segments: 12, flat: false }));
+    p.push(lathe([[0.4, 0.22], [0.4, 0.28], [0.32, 0.48], [0.22, 0.7], [0.17, 0.82]], pants, { segments: 12, flat: false, surface: 'fabric' }));
     p.push(torus(0.4, 0.02, shade(pants, 0.8), { y: 0.26, rx: PI / 2, radial: 4, segments: 14 }));
-    for (const sg of [1, -1]) p.push(capsule(0.065, 0.36, sc, { x: -0.02, y: 0.28, z: sg * 0.1, segments: 7, caps: 2 }), Sl(0.09, shoe, { x: 0.04, y: 0.05, z: sg * 0.1, sx: 1.5, sy: 0.7 }));
+    for (const sg of [1, -1]) {
+      const hip = [-0.02, 0.5, sg * 0.1], o = { side: sg, hip };
+      p.push(articulate(capsule(0.065, 0.36, sc, { x: -0.02, y: 0.28, z: sg * 0.1, segments: 7, caps: 2 }), 'leg', hip, o),
+        articulate(Sl(0.09, shoe, { x: 0.04, y: 0.05, z: sg * 0.1, sx: 1.5, sy: 0.7, surface: 'rubber' }), 'leg', hip, o));
+    }
   } else {
     for (const sg of [1, -1]) {
-      p.push(capsule(0.095, 0.5, pants, { x: -0.02, y: 0.42, z: sg * 0.115, segments: 8, caps: 2 }));
-      p.push(Sl(0.115, shoe, { x: 0.05, y: 0.07, z: sg * 0.115, sx: 1.6, sy: 0.65, sz: 0.9 }), B(0.05, 0.04, 0.16, C.white, 0.15, 0.03, sg * 0.115));
+      const hip = [-0.02, 0.76, sg * 0.115], o = { side: sg, hip };
+      p.push(articulate(capsule(0.095, 0.5, pants, { x: -0.02, y: 0.42, z: sg * 0.115, segments: 8, caps: 2, ...(pants === skin ? {} : { surface: 'fabric' }) }), 'leg', hip, o));
+      p.push(articulate(Sl(0.115, shoe, { x: 0.05, y: 0.07, z: sg * 0.115, sx: 1.6, sy: 0.65, sz: 0.9, surface: 'rubber' }), 'leg', hip, o),
+        articulate(B(0.05, 0.04, 0.16, C.white, 0.15, 0.03, sg * 0.115), 'leg', hip, o));
     }
-    p.push(cyl(0.21, 0.2, 0.14, pants, { y: 0.78, sz: 1.15, segments: 10 }), B(0.42, 0.045, 0.3, shade(pants, 0.55), 0, 0.84, 0));
+    p.push(cyl(0.21, 0.2, 0.14, pants, { y: 0.78, sz: 1.15, segments: 10, ...(pants === skin ? {} : { surface: 'fabric' }) }), B(0.42, 0.045, 0.3, shade(pants, 0.55), 0, 0.84, 0));
   }
   const ty = dress ? 1.05 : 1.15;
-  p.push(capsule(0.2, 0.34, shirt, { y: ty, sx: 0.78, sz: 1.15, segments: 10, caps: 3 }));
+  p.push(capsule(0.2, 0.34, shirt, { y: ty, sx: 0.78, sz: 1.15, segments: 10, caps: 3, surface: 'fabric' }));
   if (stripe) p.push(cyl(0.245, 0.245, 0.08, stripe, { y: ty + 0.02, sx: 0.78, sz: 1.15, segments: 10 }));
   p.push(cyl(0.07, 0.08, 0.14, sc, { y: ty + 0.4, segments: 8 }));
   // arms (shoulder -> hand) and hands
   for (const sg of [1, -1]) {
     const fwd = leash && sg === 1;
-    p.push(limb(0, ty + 0.3, fwd ? 0.26 : 0.03, ty - (fwd ? 0.14 : 0.3), 0.06, shirt, { z: sg * 0.31 }));
-    p.push(Sl(0.07, sc, { x: fwd ? 0.28 : 0.04, y: ty - (fwd ? 0.18 : 0.34), z: sg * 0.34 }));
+    // The leash hand stays put; the other arm swings opposite the legs.
+    const swing = (g) => (fwd ? g : articulate(g, 'arm', [0, ty + 0.3, sg * 0.31], { side: sg }));
+    p.push(swing(limb(0, ty + 0.3, fwd ? 0.26 : 0.03, ty - (fwd ? 0.14 : 0.3), 0.06, shirt, { z: sg * 0.31, surface: 'fabric' })));
+    p.push(swing(Sl(0.07, sc, { x: fwd ? 0.28 : 0.04, y: ty - (fwd ? 0.18 : 0.34), z: sg * 0.34 })));
   }
   // head, face, hair
   const hy = ty + 0.62;
@@ -194,7 +238,7 @@ function car({ body, roof = body, kind = 'sedan', trim = '#3a3a44', win = '#9ad0
   p.push(B(0.06, cabH * 0.72, 1.3, win, cabX - cabL / 2 + 0.02 - 0.05, cy, 0, { rz: kind === 'suv' ? 0.1 : -0.5 }));
   // lights, grille, bumpers, plates
   for (const sg of [1, -1]) {
-    p.push(Sl(0.14, '#fff6c0', { x: 1.86, y: by + 0.22, z: sg * 0.56, sx: 0.55, sy: 0.8 }));
+    p.push(Sl(0.14, '#fff6c0', { emissive: 0.8, x: 1.86, y: by + 0.22, z: sg * 0.56, sx: 0.55, sy: 0.8 }));
     p.push(B(0.05, 0.13, 0.3, C.red, -1.9, by + 0.24, sg * 0.6));
     p.push(B(0.05, 0.05, 0.12, C.orange, 1.9, by + 0.06, sg * 0.72));
   }
@@ -203,8 +247,11 @@ function car({ body, roof = body, kind = 'sedan', trim = '#3a3a44', win = '#9ad0
   p.push(B(0.03, 0.14, 0.34, C.white, -1.92, by - 0.02, 0), B(0.03, 0.12, 0.3, C.white, 1.93, by - 0.06, 0));
   // wheels: tyre, rim, hub
   for (const [x, z] of [[1.22, 0.8], [1.22, -0.8], [-1.22, 0.8], [-1.22, -0.8]]) {
-    p.push(cyl(wr, wr, 0.3, '#232326', { x, y: wr, z, rx: PI / 2, segments: 12 }));
-    p.push(cyl(wr * 0.62, wr * 0.62, 0.32, C.metal, { x, y: wr, z, rx: PI / 2, segments: 10 }), cyl(wr * 0.2, wr * 0.2, 0.34, '#555', { x, y: wr, z, rx: PI / 2, segments: 6 }));
+    const pivot = [x, wr, z], o = { radius: wr, front: x > 0 };
+    p.push(articulate(cyl(wr, wr, 0.3, '#232326', { x, y: wr, z, rx: PI / 2, segments: 12, surface: 'rubber' }), 'wheel', pivot, o));
+    p.push(articulate(cyl(wr * 0.62, wr * 0.62, 0.32, C.metal, { x, y: wr, z, rx: PI / 2, segments: 10 }), 'wheel', pivot, o),
+      articulate(cyl(wr * 0.2, wr * 0.2, 0.34, '#555', { x, y: wr, z, rx: PI / 2, segments: 6, surface: 'metal' }), 'wheel', pivot, o),
+      articulate(B(wr * 1.0, wr * 0.12, 0.35, '#bfc5cb', x, wr, z, { surface: 'metal' }), 'wheel', pivot, o));
   }
   if (kind === 'suv') p.push(B(2.1, 0.05, 0.05, trim, cabX, by + 0.4 + cabH + 0.08, 0.5), B(2.1, 0.05, 0.05, trim, cabX, by + 0.4 + cabH + 0.08, -0.5));
   return p;
@@ -212,7 +259,8 @@ function car({ body, roof = body, kind = 'sedan', trim = '#3a3a44', win = '#9ad0
 
 export function buildProtos() {
   const P = {};
-  const add = (name, parts, opts) => (P[name] = makeProto(name, parts.flat(), opts));
+  const SWAY = { tree: 'tree', treeBig: 'tree', treeBlossom: 'tree', pineTree: 'tree', bush: 'tree', pondDuck: 'boat' };
+  const add = (name, parts, opts = {}) => (P[name] = applyModelFinishes(makeProto(name, parts.flat(), { sway: SWAY[name], ...opts }), 'park'));
 
   // ---------- tiny ----------
   add('bone', [
@@ -428,7 +476,7 @@ export function buildProtos() {
   })(), { value: 2.0, radius: 1.4 });
 
   // ---------- large ----------
-  const canopy = (blobs) => blobs.map(([x, y, z, r, c, sy = 0.9]) => sphere(r, c, { x, y, z, sy, segments: 10, rings: 7 }));
+  const canopy = (blobs) => blobs.map(([x, y, z, r, c, sy = 0.9]) => sphere(r, c, { x, y, z, sy, segments: 10, rings: 7, surface: 'foliage', textureStrength: 0.7 }));
   const trunkGeo = (h, r, c = C.trunk) => [
     lathe([[r * 1.9, 0], [r * 1.45, 0.25], [r * 1.05, h * 0.3], [r * 0.9, h * 0.75], [r * 0.85, h]], c, { segments: 10 }),
     cyl(r * 0.28, r * 0.4, h * 0.45, C.trunkD, { x: r * 0.85, y: h * 0.85, z: 0, rz: -0.9, segments: 6 }),
@@ -442,7 +490,7 @@ export function buildProtos() {
   add('pineTree', (() => {
     const p = [lathe([[0.55, 0], [0.4, 0.4], [0.3, 1.6]], C.trunk, { segments: 8 })];
     const tiers = [[2.1, 2.0, 1.1, C.dgreen], [1.75, 1.8, 2.5, C.green], [1.35, 1.6, 3.7, C.dgreen], [0.95, 1.4, 4.8, C.green], [0.55, 1.2, 5.7, C.dgreen]];
-    for (const [r, h, y, c] of tiers) p.push(lathe([[r, y], [r * 0.82, y + h * 0.18], [r * 0.9, y + h * 0.2], [r * 0.4, y + h * 0.7], [0.0, y + h]], c, { segments: 12, flat: false }));
+    for (const [r, h, y, c] of tiers) p.push(lathe([[r, y], [r * 0.82, y + h * 0.18], [r * 0.9, y + h * 0.2], [r * 0.4, y + h * 0.7], [0.0, y + h]], c, { segments: 12, flat: false, surface: 'foliage', textureStrength: 0.7 }));
     p.push(cone(0.1, 0.4, C.yellow, { y: 7.05, segments: 5 }));
     return p;
   })(), { value: 3.5, radius: 1.9 });
@@ -468,7 +516,12 @@ export function buildProtos() {
     p.push(cyl(0.06, 0.06, 1.7, C.metal, { y: 2.2, x: 0, segments: 8 }));
     for (let i = 0; i < 6; i++) p.push(B(0.44, 0.06, 0.8, i % 2 ? C.white : C.red, -1.1 + i * 0.44, 1.98, 0.95, { rx: 0.35 }));
     p.push(lathe([[0.02, 3.35], [0.5, 3.22], [1.1, 3.02], [1.5, 2.86], [1.42, 2.84], [0.8, 2.95], [0.0, 3.2]], C.red, { segments: 16, flat: false }), lathe([[0.4, 3.24], [0.8, 3.12]], C.white, { segments: 16 }), lathe([[1.15, 2.99], [1.5, 2.86]], C.white, { segments: 16 }), sphere(0.1, C.yellow, { y: 3.42, segments: 6, rings: 4 }));
-    for (const [x, z] of [[0.9, 0.78], [-0.9, 0.78], [0.9, -0.78], [-0.9, -0.78]]) p.push(cyl(0.4, 0.4, 0.1, C.dark, { x, y: 0.4, z, rx: PI / 2, segments: 14 }), cyl(0.22, 0.22, 0.12, C.metal, { x, y: 0.4, z, rx: PI / 2, segments: 10 }));
+    for (const [x, z] of [[0.9, 0.78], [-0.9, 0.78], [0.9, -0.78], [-0.9, -0.78]]) {
+      const pivot = [x, 0.4, z], o = { radius: 0.4, front: x > 0 };
+      p.push(articulate(cyl(0.4, 0.4, 0.1, C.dark, { x, y: 0.4, z, rx: PI / 2, segments: 14, surface: 'rubber' }), 'wheel', pivot, o),
+        articulate(cyl(0.22, 0.22, 0.12, C.metal, { x, y: 0.4, z, rx: PI / 2, segments: 10 }), 'wheel', pivot, o),
+        articulate(B(0.44, 0.05, 0.14, '#d8dde2', x, 0.4, z, { surface: 'metal' }), 'wheel', pivot, o));
+    }
     p.push(cone(0.14, 0.34, '#e8b060', { x: 0.4, y: 1.55, z: 0.3, rz: PI, segments: 8 }), S(0.15, C.pink, { x: 0.4, y: 1.8, z: 0.3 }), cone(0.14, 0.34, '#e8b060', { x: -0.1, y: 1.55, z: 0.3, rz: PI, segments: 8 }), S(0.15, C.lime, { x: -0.1, y: 1.8, z: 0.3 }), cone(0.14, 0.34, '#e8b060', { x: -0.6, y: 1.55, z: 0.3, rz: PI, segments: 8 }), S(0.15, '#6a3a1e', { x: -0.6, y: 1.8, z: 0.3 }));
     p.push(B(0.15, 0.06, 1.2, C.dark, -1.45, 1.05, 0), B(0.5, 0.06, 0.06, C.dark, -1.65, 1.05, 0.55), B(0.5, 0.06, 0.06, C.dark, -1.65, 1.05, -0.55), B(0.05, 0.25, 0.05, C.metal, -1.4, 0.9, 0.55));
     return p;
@@ -551,7 +604,7 @@ export function buildProtos() {
     p.push(RB(3.4, 1.0, 0.3, C.white, 0, 6.3, 4.7, { bevel: 0.1 }), capsule(0.2, 1.4, C.bone, { x: 0, y: 6.3, z: 4.9, rz: PI / 2, segments: 10, caps: 3 }), ...[[1, 1], [1, -1], [-1, 1], [-1, -1]].map(([a, b]) => sphere(0.34, C.bone, { x: a * 0.95, y: 6.3 + b * 0.22, z: 4.9, segments: 8, rings: 6 })));
     // windows with frames + flower boxes
     for (const x of [-3.9, 3.9]) {
-      p.push(RB(2.6, 2.6, 0.3, C.white, x, 4.3, 4.55, { bevel: 0.08 }), RB(2.2, 2.2, 0.32, C.lblue, x, 4.3, 4.6, { bevel: 0.05 }), B(0.14, 2.2, 0.34, C.white, x, 4.3, 4.62), B(2.2, 0.14, 0.34, C.white, x, 4.3, 4.62));
+      p.push(RB(2.6, 2.6, 0.14, C.white, x, 4.3, 4.57, { bevel: 0.05 }), ...recessedWindow(2.2, 2.2, 0.14, { x, y: 4.3, z: 4.78, frame: 0.16, frameColor: C.white, glassColor: '#7cc4f0', mullion: true }));
       p.push(RB(2.4, 0.4, 0.6, C.dwood, x, 2.85, 4.85, { bevel: 0.06 }));
       for (let i = 0; i < 4; i++) p.push(S(0.28, [C.pink, C.yellow, C.red, C.pink][i], { x: x - 0.9 + i * 0.6, y: 3.2, z: 4.85 }), S(0.24, C.leafA, { x: x - 0.9 + i * 0.6, y: 3.05, z: 5.0 }));
     }

@@ -1,7 +1,10 @@
 // Santa Barbara object prototypes: Spanish Colonial Revival buildings, palms, beach + wharf, landmarks.
 // Vehicles / people are length-along-X, front toward +X. Buildings and landmarks face +Z.
 import * as THREE from 'three';
-import { box, rbox, cyl, cone, sphere, torus, capsule, lathe, extrude, makeProto } from './build.js';
+import { box, rbox, cyl, cone, sphere, torus, capsule, lathe, extrude, makeProto, articulate } from './build.js';
+import { facadeWall, recessedWindow } from './ModelDetails.js';
+import { applyModelFinishes } from './ModelFinishes.js';
+import { applyWindWeights } from './build.js';
 
 const C = {
   stucco: '#f5eedd', cream: '#efe1c3', white: '#fbf7ee', peach: '#f1d4b0', pink: '#eccbb4', sand: '#e6d2ac', adobe: '#e2bf94',
@@ -65,7 +68,7 @@ const tilePanel = (L, S, color, o = {}) => {
   const n = Math.max(2, Math.round(L / (o.pitch ?? 0.85))), pw = L / n, h = o.h ?? 0.24, x0 = -L / 2, pts = [];
   for (let i = 0; i < n; i++) { const a = x0 + i * pw; pts.push([a, 0], [a + pw * 0.3, h], [a + pw * 0.7, h]); }
   pts.push([x0 + L, 0], [x0 + L, -0.16], [x0, -0.16]);
-  return extrude(pts, S, color, o);
+  return extrude(pts, S, color, { ...o, surface: o.surface ?? 'roof' });
 };
 /**
  * Gable roof with the ridge along X over a w x d footprint whose eaves sit at height y0.
@@ -74,10 +77,10 @@ const tilePanel = (L, S, color, o = {}) => {
 const gable = (w, d, y0, pitch = 0.5, roof = C.tile, wall = C.stucco, ov = 0.5) => {
   const hd = d / 2 + ov, rise = hd * Math.tan(pitch), S = hd / Math.cos(pitch), L = w + ov * 2;
   const p = [
-    extrude([[-d / 2, 0], [d / 2, 0], [0, (d / 2) * Math.tan(pitch)]], w - 0.15, wall, { y: y0, ry: PI / 2 }),
+    extrude([[-d / 2, 0], [d / 2, 0], [0, (d / 2) * Math.tan(pitch)]], w - 0.15, wall, { y: y0, ry: PI / 2, surface: 'stucco' }),
     tilePanel(L, S, roof, { y: y0 + rise / 2 + 0.05, z: hd / 2, rx: pitch }),
     tilePanel(L, S, roof, { y: y0 + rise / 2 + 0.05, z: -hd / 2, rx: -pitch }),
-    box(L, 0.16, 0.5, roof === C.tile ? C.dtile : roof, { y: y0 + rise + 0.22 }),
+    box(L, 0.16, 0.5, roof === C.tile ? C.dtile : roof, { y: y0 + rise + 0.22, surface: 'roof' }),
   ];
   return p;
 };
@@ -95,18 +98,18 @@ const wnd = (f, u, y, off, w = 0.9, h = 1.5, o = {}) => {
   const fr = o.frame ?? C.trim, gl = o.glass ?? C.glass;
   const p = [];
   if (o.arch) {
-    p.push(extrude(archPts(w + 0.3, h + 0.15), 0.12, fr, { x, y: y - 0.08, z, ry }));
-    p.push(extrude(archPts(w, h), 0.18, gl, { x, y, z, ry }));
+    p.push(extrude(archPts(w + 0.3, h + 0.15), 0.12, fr, { x, y: y - 0.08, z, ry, surface: 'stone' }));
+    p.push(extrude(archPts(w, h), 0.18, gl, { x, y, z, ry, surface: 'glass' }));
   } else {
-    p.push(box(w + 0.3, h + 0.3, 0.12, fr, { x, y: y + h / 2, z, ry }));
-    p.push(box(w, h, 0.18, gl, { x, y: y + h / 2, z, ry }));
-    if (o.mull !== false) p.push(box(0.07, h, 0.24, fr, { x, y: y + h / 2, z, ry }));
-    if (o.sill !== false) p.push(box(w + 0.6, 0.14, 0.42, fr, { x, y: y - 0.1, z, ry }));
+    p.push(box(w + 0.3, h + 0.3, 0.12, fr, { x, y: y + h / 2, z, ry, surface: 'stone' }));
+    p.push(box(w, h, 0.18, gl, { x, y: y + h / 2, z, ry, surface: 'glass' }));
+    if (o.mull !== false) p.push(box(0.07, h, 0.24, fr, { x, y: y + h / 2, z, ry, surface: 'stone' }));
+    if (o.sill !== false) p.push(box(w + 0.6, 0.14, 0.42, fr, { x, y: y - 0.1, z, ry, surface: 'stone' }));
   }
   if (o.shutter) {
     for (const s of [-1, 1]) {
       const sp = FACE[f](u + s * (w / 2 + 0.42), off);
-      p.push(box(0.4, h + 0.1, 0.1, o.shutter, { x: sp.x, y: y + h / 2, z: sp.z, ry: sp.ry }));
+      p.push(box(0.4, h + 0.1, 0.1, o.shutter, { x: sp.x, y: y + h / 2, z: sp.z, ry: sp.ry, surface: 'wood' }));
     }
   }
   return p;
@@ -115,24 +118,36 @@ const wnd = (f, u, y, off, w = 0.9, h = 1.5, o = {}) => {
 const door = (f, u, off, w = 1.3, h = 2.4, col = C.dwood, frame = C.trim) => {
   const { x, z, ry } = FACE[f](u, off);
   return [
-    extrude(archPts(w + 0.5, h + 0.25), 0.14, frame, { x, y: 0, z, ry }),
-    extrude(archPts(w, h), 0.2, col, { x, y: 0, z, ry }),
+    extrude(archPts(w + 0.5, h + 0.25), 0.14, frame, { x, y: 0, z, ry, surface: 'stone' }),
+    extrude(archPts(w, h), 0.2, col, { x, y: 0, z, ry, surface: 'wood' }),
+  ];
+};
+/** Recessed arched entry on an inset facade: open jambs and arch surround, with the door panel behind the wall face. */
+const recessedDoor = (u, faceZ, w, h, col = C.dwood, frame = C.trim) => {
+  const outerR = (w + 0.5) / 2, innerR = w / 2, spring = Math.max(0, h - innerR);
+  const frameZ = faceZ - 0.05, panelZ = faceZ - 0.2;
+  return [
+    ...[-1, 1].map((side) => box(outerR - innerR, spring, 0.1, frame, {
+      x: u + side * (innerR + (outerR - innerR) / 2), y: spring / 2, z: frameZ, surface: 'stone',
+    })),
+    extrude(ringPts(outerR, innerR, 10), 0.1, frame, { x: u, y: spring, z: frameZ, surface: 'stone' }),
+    extrude(archPts(w, h), 0.14, col, { x: u, y: 0, z: panelZ, surface: 'wood' }),
   ];
 };
 /** Wrought-iron balcony rail along face f (length len), height h, sitting at y with depth out from the wall. */
 const balcony = (f, u, y, off, len = 3, out = 0.8, h = 0.9) => {
   const { x, z, ry } = FACE[f](u, off + out / 2);
-  const p = [box(len, 0.16, out, C.dconcrete, { x, y, z, ry })];
+  const p = [box(len, 0.16, out, C.dconcrete, { x, y, z, ry, surface: 'stone' })];
   const nb = Math.max(3, Math.round(len / 0.42));
   const rz = FACE[f](u, off + out - 0.05);
-  p.push(box(len, 0.07, 0.07, C.iron, { x: rz.x, y: y + h, z: rz.z, ry }));
+  p.push(box(len, 0.07, 0.07, C.iron, { x: rz.x, y: y + h, z: rz.z, ry, surface: 'metal' }));
   for (let i = 0; i <= nb; i++) {
     const q = FACE[f](u - len / 2 + (i / nb) * len, off + out - 0.05);
-    p.push(box(0.05, h, 0.05, C.iron, { x: q.x, y: y + h / 2 + 0.05, z: q.z, ry }));
+    p.push(box(0.05, h, 0.05, C.iron, { x: q.x, y: y + h / 2 + 0.05, z: q.z, ry, surface: 'metal' }));
   }
   for (const s of [-1, 1]) {
     const q = FACE[f](u + s * (len / 2 - 0.03), off + out / 2);
-    p.push(box(0.06, h * 0.55, out, C.iron, { x: q.x, y: y + h * 0.3, z: q.z, ry }));
+    p.push(box(0.06, h * 0.55, out, C.iron, { x: q.x, y: y + h * 0.3, z: q.z, ry, surface: 'metal' }));
   }
   return p;
 };
@@ -142,15 +157,70 @@ const awning = (f, u, y, off, len, out, colA, colB) => {
   const p = [];
   const n = Math.max(2, Math.round(len / 0.7));
   for (let i = 0; i < n; i++) {
-    p.push(box(len / n, 0.1, out, i % 2 ? colB : colA, { x: x + Math.cos(ry) * ((i + 0.5) / n - 0.5) * len, y, z: z - Math.sin(ry) * ((i + 0.5) / n - 0.5) * len, ry }));
+    p.push(box(len / n, 0.1, out, i % 2 ? colB : colA, { x: x + Math.cos(ry) * ((i + 0.5) / n - 0.5) * len, y, z: z - Math.sin(ry) * ((i + 0.5) / n - 0.5) * len, ry, surface: 'fabric' }));
   }
   return p;
 };
 
-const wheel = (x, y, z, r, w = 0.3) => [
-  cyl(r, r, w, C.tire, { x, y, z, rx: PI / 2, segments: 10, flat: false }),
-  cyl(r * 0.55, r * 0.55, w + 0.04, C.silver, { x, y, z, rx: PI / 2, segments: 8, flat: false }),
-];
+const wheel = (x, y, z, r, w = 0.3) => {
+  const pivot = [x, y, z], opts = { side: z >= 0 ? 1 : -1, radius: r, front: x > 0 };
+  const parts = [
+    cyl(r, r, w, C.tire, { x, y, z, rx: PI / 2, segments: 16, flat: false, surface: 'rubber' }),
+    cyl(r * 0.55, r * 0.55, w + 0.04, C.silver, { x, y, z, rx: PI / 2, segments: 12, flat: false, surface: 'metal' }),
+  ];
+  for (let i = 0; i < 6; i++) {
+    const a = i * PI / 3;
+    parts.push(box(r * 0.62, 0.035, w + 0.055, C.silver, { x: x + Math.cos(a) * r * 0.27, y: y + Math.sin(a) * r * 0.27, z, rz: a, surface: 'metal' }));
+  }
+  return parts.map((g) => articulate(g, 'wheel', pivot, opts));
+};
+
+/** Fine pinnate leaflets for near palms; far geometry keeps the broad original frond silhouette. */
+const pinnateFrond = (length, halfWidth, rootWidth, color, detail = true, depth = 0.05) => {
+  if (!detail) {
+    return [extrude([[0, -rootWidth], [length * 0.5, -halfWidth], [length * 0.72, -halfWidth * 0.74], [length, 0],
+      [length * 0.72, halfWidth * 0.74], [length * 0.5, halfWidth], [0, rootWidth]], depth, color, { rx: PI / 2, surface: 'foliage' })];
+  }
+  // The rachis and leaflets share the far frond's bounding extents, so LOD preserves the crown silhouette.
+  const parts = [extrude([[0, -rootWidth], [length * 0.52, -0.018], [length, 0], [length * 0.52, 0.018], [0, rootWidth]], depth, C.dgreen, { rx: PI / 2, surface: 'foliage' })];
+  const n = 11;
+  for (let i = 1; i <= n; i++) {
+    const u = i / (n + 1), x = length * u;
+    const bladeHalf = halfWidth * Math.sin(PI * u);
+    const bladeLength = Math.min(length * 0.13, length - x);
+    for (const side of [-1, 1]) {
+      const points = [
+        [x - bladeLength * 0.04, 0],
+        [x + bladeLength * 0.22, side * bladeHalf * 0.16],
+        [x + bladeLength * 0.72, side * bladeHalf * 0.62],
+        [x + bladeLength, side * bladeHalf],
+        [x + bladeLength * 0.66, side * bladeHalf * 0.48],
+        [x + bladeLength * 0.16, side * bladeHalf * 0.08],
+      ];
+      const shade = i % 4 === 0 ? C.lgreen : i % 3 === 0 ? C.green : color;
+      parts.push(extrude(points, depth, shade, { rx: PI / 2, surface: 'foliage' }));
+    }
+  }
+  return parts;
+};
+
+/** Keep far palm geometry on the same local bounds as its detailed counterpart. */
+const matchGeometryBounds = (target, geometry) => {
+  target.computeBoundingBox();
+  geometry.computeBoundingBox();
+  const a = target.boundingBox, b = geometry.boundingBox;
+  const sizeA = a.getSize(new THREE.Vector3()), sizeB = b.getSize(new THREE.Vector3());
+  geometry.applyMatrix4(new THREE.Matrix4().makeScale(
+    sizeA.x / Math.max(sizeB.x, 1e-6),
+    sizeA.y / Math.max(sizeB.y, 1e-6),
+    sizeA.z / Math.max(sizeB.z, 1e-6),
+  ));
+  geometry.computeBoundingBox();
+  const center = a.getCenter(new THREE.Vector3()).sub(geometry.boundingBox.getCenter(new THREE.Vector3()));
+  geometry.translate(center.x, center.y, center.z);
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+};
 
 // ------------------------------------------------------------------ vegetation
 /** Slim palm with a gently curved trunk and drooping fronds. h = trunk height, lean = sideways curve. */
@@ -162,44 +232,43 @@ const palm = (h, lean, fronds, fl, o = {}) => {
     const x0 = X(t0), x1 = X(t1), y0 = h * t0, y1 = h * t1;
     const len = Math.hypot(x1 - x0, y1 - y0);
     p.push(cyl(tr * (1 - t1 * 0.35), tr * (1 - t0 * 0.35) * 1.05, len, i % 2 ? C.trunk : C.trunk2, {
-      x: (x0 + x1) / 2, y: (y0 + y1) / 2, rz: -Math.atan2(x1 - x0, y1 - y0), segments: 7, flat: false }));
+      x: (x0 + x1) / 2, y: (y0 + y1) / 2, rz: -Math.atan2(x1 - x0, y1 - y0), segments: 7, flat: false, surface: 'wood' }));
   }
-  if (o.boots) p.push(sphere(tr * 1.5, C.trunk2, { x: X(1), y: h, segments: 8, rings: 5, flat: false }));
+  if (o.boots) p.push(sphere(tr * 1.5, C.trunk2, { x: X(1), y: h, segments: 8, rings: 5, flat: false, surface: 'wood' }));
   const cx = X(1), cy = h;
   const w = o.w ?? 0.34;
   for (let k = 0; k < fronds; k++) {
     const yaw = (k / fronds) * TAU + (k % 2) * 0.2;
     const L1 = fl * 0.5, L2 = fl * 0.62, pr = o.rise ?? 0.42, dr = o.droop ?? -0.7;
     const c1 = Math.cos(pr) * L1, s1 = Math.sin(pr) * L1;
-    const leaf1 = extrude([[0, -0.07], [L1 * 0.5, -w * fl * 0.17], [L1, -w * fl * 0.13], [L1, w * fl * 0.13], [L1 * 0.5, w * fl * 0.17], [0, 0.07]], 0.05, C.dgreen, { rx: PI / 2 });
-    const leaf2 = extrude([[0, -w * fl * 0.13], [L2 * 0.4, -w * fl * 0.16], [L2, 0], [L2 * 0.4, w * fl * 0.16], [0, w * fl * 0.13]], 0.05, k % 2 ? C.green : C.lgreen, { rx: PI / 2 });
-    p.push(aim(leaf1, cx, cy, 0, -yaw, pr));
+    const leaf1 = pinnateFrond(L1, w * fl * 0.17, 0.07, C.dgreen, o.detail !== false);
+    const leaf2 = pinnateFrond(L2, w * fl * 0.16, w * fl * 0.13, k % 2 ? C.green : C.lgreen, o.detail !== false);
+    for (const leaf of leaf1) p.push(aim(leaf, cx, cy, 0, -yaw, pr));
     // second segment starts at the end of the first: rotate about the frond base
-    _M.makeTranslation(cx, cy, 0);
     const lx = Math.cos(yaw) * c1, lz = -Math.sin(yaw) * c1;
-    p.push(aim(leaf2, cx + lx, cy + s1, lz, -yaw, dr));
+    for (const leaf of leaf2) p.push(aim(leaf, cx + lx, cy + s1, lz, -yaw, dr));
   }
   return p;
 };
 /** Fan palm: short thick trunk, big radial fan of stiff fronds (drawn as flat discs of leaf blades). */
-const fanPalm = (h) => {
-  const p = [cyl(0.32, 0.4, h, C.trunk2, { y: h / 2, segments: 8, flat: false }), cyl(0.5, 0.36, 0.5, C.trunk, { y: h, segments: 8, flat: false })];
+const fanPalm = (h, detail = true) => {
+  const p = [cyl(0.32, 0.4, h, C.trunk2, { y: h / 2, segments: 8, flat: false, surface: 'wood' }), cyl(0.5, 0.36, 0.5, C.trunk, { y: h, segments: 8, flat: false, surface: 'wood' })];
   for (let k = 0; k < 11; k++) {
     const yaw = (k / 11) * TAU;
-    const leaf = extrude([[0, -0.1], [1.2, -0.55], [2.6, -0.35], [3.0, 0], [2.6, 0.35], [1.2, 0.55], [0, 0.1]], 0.06, k % 2 ? C.green : C.dgreen, { rx: PI / 2 });
-    p.push(aim(leaf, 0, h + 0.2, 0, -yaw, 0.3 - (k % 3) * 0.18));
+    const leaf = pinnateFrond(3.0, 0.55, 0.1, k % 2 ? C.green : C.dgreen, detail, 0.06);
+    for (const part of leaf) p.push(aim(part, 0, h + 0.2, 0, -yaw, 0.3 - (k % 3) * 0.18));
   }
   return p;
 };
 const oakTree = (s = 1) => {
   const p = [
-    cyl(0.45 * s, 0.7 * s, 2.4 * s, C.trunk2, { y: 1.2 * s, segments: 8, flat: false }),
-    cyl(0.25 * s, 0.4 * s, 2.2 * s, C.trunk2, { x: 0.7 * s, y: 3.0 * s, rz: -0.8, segments: 7, flat: false }),
-    cyl(0.25 * s, 0.4 * s, 2.0 * s, C.trunk2, { x: -0.7 * s, y: 3.0 * s, rz: 0.8, segments: 7, flat: false }),
+    cyl(0.45 * s, 0.7 * s, 2.4 * s, C.trunk2, { y: 1.2 * s, segments: 8, flat: false, surface: 'wood' }),
+    cyl(0.25 * s, 0.4 * s, 2.2 * s, C.trunk2, { x: 0.7 * s, y: 3.0 * s, rz: -0.8, segments: 7, flat: false, surface: 'wood' }),
+    cyl(0.25 * s, 0.4 * s, 2.0 * s, C.trunk2, { x: -0.7 * s, y: 3.0 * s, rz: 0.8, segments: 7, flat: false, surface: 'wood' }),
   ];
   const blobs = [[0, 4.6, 0, 2.3, C.oak], [1.9, 3.9, 0.7, 1.8, C.oak2], [-1.9, 3.8, -0.6, 1.9, C.oak3], [0.5, 4.2, 1.9, 1.7, C.oak2],
     [-0.6, 4.1, -1.9, 1.7, C.oak], [1.2, 5.2, -0.9, 1.5, C.oak3], [-1.2, 5.3, 0.8, 1.4, C.oak2]];
-  for (const [x, y, z, r, c] of blobs) p.push(sphere(r * s, c, { x: x * s, y: y * s, z: z * s, sy: 0.8, segments: 9, rings: 6, flat: false }));
+  for (const [x, y, z, r, c] of blobs) p.push(sphere(r * s, c, { x: x * s, y: y * s, z: z * s, sy: 0.8, segments: 9, rings: 6, flat: false, surface: 'foliage' }));
   return p;
 };
 const roseBush = (col) => {
@@ -244,16 +313,30 @@ const figTree = () => {
 // ------------------------------------------------------------------ people
 const person = (shirt, pants, skin, hair, o = {}) => {
   const legLen = o.kid ? 0.45 : 0.72, sc = o.kid ? 0.7 : 1;
+  const hipY = legLen + 0.06, kneeY = 0.06 + legLen * 0.48, upperLen = legLen * 0.52, lowerLen = legLen * 0.48;
+  const hipL = [0, hipY, 0.11 * sc], hipR = [0, hipY, -0.11 * sc];
+  const kneeL = [0, kneeY, 0.11 * sc], kneeR = [0, kneeY, -0.11 * sc];
+  const armL = [0, legLen + 0.64 * sc, 0.3 * sc], armR = [0, legLen + 0.64 * sc, -0.3 * sc];
   const p = [
-    cyl(0.1 * sc, 0.09 * sc, legLen, pants, { x: 0, y: legLen / 2 + 0.06, z: 0.11 * sc, segments: 8, flat: false }),
-    cyl(0.1 * sc, 0.09 * sc, legLen, pants, { x: 0, y: legLen / 2 + 0.06, z: -0.11 * sc, segments: 8, flat: false }),
-    box(0.3 * sc, 0.08, 0.14 * sc, o.shoe ?? C.white2, { x: 0.04, y: 0.04, z: 0.11 * sc }),
-    box(0.3 * sc, 0.08, 0.14 * sc, o.shoe ?? C.white2, { x: 0.04, y: 0.04, z: -0.11 * sc }),
-    cyl(0.2 * sc, 0.23 * sc, 0.6 * sc, shirt, { y: legLen + 0.34, segments: 10, flat: false }),
-    cyl(0.065, 0.06, 0.55 * sc, o.sleeve ?? shirt, { y: legLen + 0.4, z: 0.3 * sc, rx: 0.16, segments: 7, flat: false }),
-    cyl(0.065, 0.06, 0.55 * sc, o.sleeve ?? shirt, { y: legLen + 0.4, z: -0.3 * sc, rx: -0.16, segments: 7, flat: false }),
-    sphere(0.16 * (o.kid ? 1.15 : 1), skin, { y: legLen + 0.9 * sc, segments: 9, rings: 7, flat: false }),
-    sphere(0.17 * (o.kid ? 1.15 : 1), hair, { x: -0.03, y: legLen + 0.95 * sc, sy: 0.7, segments: 8, rings: 5, flat: false }),
+    articulate(cyl(0.1 * sc, 0.09 * sc, upperLen, pants, { x: 0, y: kneeY + upperLen / 2, z: 0.11 * sc, segments: 10, flat: false, surface: 'fabric' }), 'leg', hipL, { side: 1, hip: hipL }),
+    articulate(cyl(0.1 * sc, 0.09 * sc, upperLen, pants, { x: 0, y: kneeY + upperLen / 2, z: -0.11 * sc, segments: 10, flat: false, surface: 'fabric' }), 'leg', hipR, { side: -1, hip: hipR }),
+    articulate(cyl(0.1 * sc, 0.09 * sc, lowerLen, pants, { x: 0, y: 0.06 + lowerLen / 2, z: 0.11 * sc, segments: 10, flat: false, surface: 'fabric' }), 'shin', kneeL, { side: 1, hip: hipL }),
+    articulate(cyl(0.1 * sc, 0.09 * sc, lowerLen, pants, { x: 0, y: 0.06 + lowerLen / 2, z: -0.11 * sc, segments: 10, flat: false, surface: 'fabric' }), 'shin', kneeR, { side: -1, hip: hipR }),
+    articulate(sphere(0.09 * sc, pants, { y: kneeY, z: 0.11 * sc, segments: 8, rings: 5, flat: false, surface: 'fabric' }), 'leg', hipL, { side: 1 }),
+    articulate(sphere(0.09 * sc, pants, { y: kneeY, z: -0.11 * sc, segments: 8, rings: 5, flat: false, surface: 'fabric' }), 'leg', hipR, { side: -1 }),
+    articulate(box(0.3 * sc, 0.08, 0.14 * sc, o.shoe ?? C.white2, { x: 0.04, y: 0.04, z: 0.11 * sc }), 'shin', kneeL, { side: 1, hip: hipL }),
+    articulate(box(0.3 * sc, 0.08, 0.14 * sc, o.shoe ?? C.white2, { x: 0.04, y: 0.04, z: -0.11 * sc }), 'shin', kneeR, { side: -1, hip: hipR }),
+    cyl(0.2 * sc, 0.23 * sc, 0.6 * sc, shirt, { y: legLen + 0.34, segments: 14, flat: false, surface: 'fabric' }),
+    articulate(cyl(0.065, 0.06, 0.55 * sc, o.sleeve ?? shirt, { y: legLen + 0.4, z: 0.3 * sc, rx: 0.16, segments: 12, flat: false, surface: 'fabric' }), 'arm', armL, { side: 1 }),
+    articulate(cyl(0.065, 0.06, 0.55 * sc, o.sleeve ?? shirt, { y: legLen + 0.4, z: -0.3 * sc, rx: -0.16, segments: 12, flat: false, surface: 'fabric' }), 'arm', armR, { side: -1 }),
+    articulate(sphere(0.045 * sc, skin, { y: legLen + 0.12 * sc, z: 0.3 * sc, segments: 8, rings: 5, flat: false }), 'arm', armL, { side: 1 }),
+    articulate(sphere(0.045 * sc, skin, { y: legLen + 0.12 * sc, z: -0.3 * sc, segments: 8, rings: 5, flat: false }), 'arm', armR, { side: -1 }),
+    cyl(0.075 * sc, 0.08 * sc, 0.14 * sc, skin, { y: legLen + 0.71 * sc, segments: 10, flat: false }),
+    rbox(0.16 * sc, 0.07 * sc, 0.36 * sc, C.white2, { y: legLen + 0.69 * sc, segments: 2, surface: 'fabric' }),
+    sphere(0.16 * (o.kid ? 1.15 : 1), skin, { y: legLen + 0.9 * sc, segments: 16, rings: 10, flat: false }),
+    sphere(0.17 * (o.kid ? 1.15 : 1), hair, { x: -0.03, y: legLen + 0.95 * sc, sy: 0.7, segments: 16, rings: 10, flat: false }),
+    sphere(0.02, skin, { y: legLen + 0.9 * sc, z: 0.15, segments: 8, rings: 5, flat: false }),
+    sphere(0.02, skin, { y: legLen + 0.9 * sc, z: -0.15, segments: 8, rings: 5, flat: false }),
   ];
   if (o.hat) p.push(cyl(0.3, 0.3, 0.03, o.hat, { y: legLen + 1.0 * sc, segments: 12, flat: false }), cyl(0.15, 0.17, 0.12, o.hat, { y: legLen + 1.06 * sc, segments: 10, flat: false }));
   if (o.board) p.push(capsule(0.09, 1.6, o.board, { x: 0.02, y: 1.1, z: -0.32, rz: 0.05, sx: 0.35, sz: 1.5, segments: 8, caps: 3 }));
@@ -289,21 +372,59 @@ const gull = (pelican = false) => {
 // ------------------------------------------------------------------ vehicles
 const carBody = (o) => {
   const { len = 4.4, wid = 1.85, body, roofCol = body, cab = 0.5, cabX = -0.25, cabLen = 0.5, hh = 0.75, kind = 'sedan' } = o;
+  const wr = o.wr ?? 0.4, wx = len * 0.31;
+  const bodyTop = 0.37 + hh;
+  const archR = wr + 0.11, archY = wr + 0.03;
+  const sideProfile = [[-len / 2, 0.36]];
+  for (const center of [-wx, wx]) {
+    const left = center - archR, right = center + archR;
+    if (left > sideProfile[sideProfile.length - 1][0] + 0.01) sideProfile.push([left, 0.36]);
+    for (let i = 0; i <= 10; i++) {
+      const a = PI - (i / 10) * PI;
+      sideProfile.push([center + Math.cos(a) * archR, archY + Math.sin(a) * archR]);
+    }
+  }
+  sideProfile.push([len / 2, 0.36], [len / 2, bodyTop], [-len / 2, bodyTop]);
   const p = [
-    rbox(len, hh, wid, body, { y: 0.32 + hh / 2 + 0.05, bevel: 0.22, segments: 1 }),
+    // A narrow inner body backs the sculpted outer panels without closing the wheel openings.
+    box(len * 0.98, hh, wid * 0.7, body, { y: 0.32 + hh / 2 + 0.05, surface: 'paint' }),
+    ...[-1, 1].map((side) => extrude(sideProfile, 0.12, body, { z: side * (wid / 2 - 0.06), surface: 'paint' })),
     box(len * 0.97, 0.16, wid + 0.02, C.black, { y: 0.4 }),
   ];
   const cl = len * cabLen, cy = 0.32 + hh + 0.05 + cab / 2 - 0.05;
-  p.push(rbox(cl, cab, wid * 0.9, roofCol, { x: cabX * len * 0.4, y: cy, bevel: 0.16, segments: 1 }));
-  // glass bands wrap the cabin
-  p.push(box(cl * 0.92, cab * 0.6, wid * 0.93, C.glass, { x: cabX * len * 0.4, y: cy + 0.02 }));
-  p.push(box(cl * 0.35, cab * 0.6, wid * 0.93 + 0.01, roofCol, { x: cabX * len * 0.4 - cl * 0.05, y: cy + 0.02 }));
+  const cabCenterX = cabX * len * 0.4;
+  const cabDepth = wid * 0.9;
+  const cabFront = cabCenterX + cl / 2;
+  const cabRear = cabCenterX - cl / 2;
+  p.push(rbox(cl, cab, cabDepth, roofCol, { x: cabCenterX, y: cy, bevel: 0.16, segments: 3, surface: 'paint' }));
+  // Separate raked windscreens and side panes read as glazing instead of a solid glass band.
+  const windH = Math.max(0.16, cab * 0.68), windW = cabDepth * 0.84;
+  p.push(
+    box(0.055, windH, windW, C.glass, { x: cabFront - 0.1, y: cy + 0.015, rz: -0.35, surface: 'glass' }),
+    box(0.055, windH * 0.94, windW, C.glass, { x: cabRear + 0.1, y: cy + 0.005, rz: 0.38, surface: 'glass' }),
+  );
+  for (const side of [-1, 1]) {
+    const paneZ = side * (cabDepth / 2 + 0.012);
+    p.push(box(cl * 0.7, cab * 0.56, 0.035, C.glass, { x: cabCenterX, y: cy + 0.015, z: paneZ, surface: 'glass' }));
+    // Painted pillars frame each side window and keep the glazing from reading as a single wraparound slab.
+    for (const x of [cabRear + cl * 0.16, cabCenterX, cabFront - cl * 0.16]) {
+      p.push(box(0.07, cab * 0.72, 0.07, roofCol, { x, y: cy, z: side * (cabDepth / 2 + 0.015), surface: 'paint' }));
+    }
+    // Fine door seam and small handle on the outer body flank.
+    const sideZ = side * (wid / 2 + 0.012);
+    p.push(
+      box(0.025, Math.min(0.42, hh * 0.62), 0.025, C.dwood, { x: cabCenterX + cl * 0.18, y: 0.68 + Math.min(0.42, hh * 0.62) / 2, z: sideZ, surface: 'metal' }),
+      box(0.14, 0.045, 0.04, C.silver, { x: cabCenterX - cl * 0.02, y: 0.93, z: side * (wid / 2 + 0.025), surface: 'metal' }),
+    );
+  }
   // lights, mirrors, bumpers
   p.push(box(0.08, 0.16, 0.34, '#fff2b0', { x: len / 2 - 0.02, y: 0.78, z: 0.62 }), box(0.08, 0.16, 0.34, '#fff2b0', { x: len / 2 - 0.02, y: 0.78, z: -0.62 }));
   p.push(box(0.08, 0.16, 0.34, C.red, { x: -len / 2 + 0.02, y: 0.8, z: 0.64 }), box(0.08, 0.16, 0.34, C.red, { x: -len / 2 + 0.02, y: 0.8, z: -0.64 }));
   p.push(box(0.22, 0.14, wid * 0.85, C.dconcrete, { x: len / 2, y: 0.42 }), box(0.22, 0.14, wid * 0.85, C.dconcrete, { x: -len / 2, y: 0.42 }));
+  // A dark grille and two inset slats make the nose legible from the map overview.
+  p.push(box(0.045, 0.25, 0.62, C.iron, { x: len / 2 + 0.012, y: 0.67, surface: 'metal' }));
+  for (const y of [0.61, 0.67, 0.73]) p.push(box(0.055, 0.022, 0.54, C.silver, { x: len / 2 + 0.04, y, surface: 'metal' }));
   p.push(box(0.14, 0.1, 0.16, body, { x: cabX * len * 0.4 + cl * 0.42, y: cy - 0.05, z: wid * 0.5 }), box(0.14, 0.1, 0.16, body, { x: cabX * len * 0.4 + cl * 0.42, y: cy - 0.05, z: -wid * 0.5 }));
-  const wr = o.wr ?? 0.4, wx = len * 0.31;
   p.push(...wheel(wx, wr, wid / 2 - 0.04, wr), ...wheel(wx, wr, -wid / 2 + 0.04, wr), ...wheel(-wx, wr, wid / 2 - 0.04, wr), ...wheel(-wx, wr, -wid / 2 + 0.04, wr));
   return p;
 };
@@ -321,19 +442,48 @@ const pickupModel = (body) => {
  */
 const colonial = (o) => {
   const { w = 10, d = 8, floors = 1, fh = 3.3, wall = C.stucco, roof = C.tile, arcade = false, balc = false, awn = null, tower = false,
-    shut = null, chimney = true, pitch = 0.42, bays = 3, rear = true, flatRoof = false, doorCol = C.dwood } = o;
+    shut = null, chimney = true, pitch = 0.42, bays = 3, rear = true, flatRoof = false, doorCol = C.dwood, recessedFacade = false } = o;
   const H = floors * fh;
-  const p = [rbox(w, H, d, wall, { y: H / 2, bevel: 0.18, segments: 1 }), box(w + 0.25, 0.42, d + 0.25, C.dconcrete, { y: 0.21 })];
   const hd = d / 2;
+  // Only simple one-storey fronts opt in: leave the solid core inset and cut the thin outer face for true reveals.
+  // Arcades, towers, courtyard ranges and other layered landmark fronts retain their established geometry.
+  const recessedFront = recessedFacade && !arcade && !tower && floors === 1;
+  const frontWindows = [];
+  if (recessedFront) {
+    frontWindows.push({ u: -w * 0.22, bottom: 1.0, width: 1.3, height: fh * 0.5 });
+    if (w > 9) frontWindows.push({ u: -w * 0.02 + 0.2, bottom: 1.0, width: 1.3, height: fh * 0.5 });
+    if (w > 8) frontWindows.push({ u: w * 0.4, bottom: 1.0, width: 1.0, height: fh * 0.5 });
+  }
+  const frontOpenings = recessedFront
+    ? [{ x: w * 0.18, y: fh * 0.36, width: 1.4, height: fh * 0.72 }, ...frontWindows.map((q) => ({ x: q.u, y: q.bottom + q.height / 2, width: q.width, height: q.height }))]
+    : [];
+  const p = recessedFront
+    ? [box(w, H, d - 0.32, wall, { y: H / 2, surface: 'stucco' }),
+      ...facadeWall(w, H, 0.16, wall, frontOpenings, { z: hd - 0.08, surface: 'stucco' }),
+      box(w + 0.25, 0.42, d + 0.25, C.dconcrete, { y: 0.21, surface: 'stone' })]
+    : [rbox(w, H, d, wall, { y: H / 2, bevel: 0.18, segments: 1, surface: 'stucco' }), box(w + 0.25, 0.42, d + 0.25, C.dconcrete, { y: 0.21, surface: 'stone' })];
   if (arcade) {
     const bw = (w - 1.2) / bays - 0.7;
     const { pts, L } = arcadePts(bays, bw, 0.7, fh * 0.85, fh * 0.85 - bw / 2 - 0.2, 5);
-    p.push(box(w - 0.5, fh * 0.8, 0.6, C.dwood, { y: fh * 0.4 + 0.2, z: hd - 0.8 }));
-    p.push(extrude(pts, 1.1, wall, { y: 0.25, z: hd + 0.05 }));
-    p.push(box(w + 0.2, 0.3, 1.5, C.trim, { y: fh * 0.85 + 0.35, z: hd + 0.05 }));
+    p.push(box(w - 0.5, fh * 0.8, 0.6, C.dwood, { y: fh * 0.4 + 0.2, z: hd - 0.8, surface: 'wood' }));
+    p.push(extrude(pts, 1.1, wall, { y: 0.25, z: hd + 0.05, surface: 'stucco' }));
+    p.push(box(w + 0.2, 0.3, 1.5, C.trim, { y: fh * 0.85 + 0.35, z: hd + 0.05, surface: 'stone' }));
     for (let i = 0; i < bays; i++) {
       const u = -L / 2 + 0.7 + bw / 2 + i * (bw + 0.7);
       p.push(...door(0, u, hd - 0.7, bw * 0.55, fh * 0.55, doorCol));
+    }
+  } else if (recessedFront) {
+    p.push(...recessedDoor(w * 0.18, hd, 1.4, fh * 0.72, doorCol));
+    for (const q of frontWindows) {
+      const y = q.bottom + q.height / 2;
+      p.push(...recessedWindow(q.width, q.height, 0.14, { x: q.u, y, z: hd, frameColor: C.trim, glassColor: C.glass, mullion: true }));
+      // Open voussoir ring preserves the Spanish arch without covering the recessed pane.
+      const outerR = (q.width + 0.3) / 2, innerR = q.width / 2;
+      const peak = q.bottom + q.height + 0.07;
+      p.push(extrude(ringPts(outerR, innerR, 10), 0.08, C.trim, { x: q.u, y: peak - outerR, z: hd + 0.02, surface: 'stone' }));
+      if (shut) for (const side of [-1, 1]) {
+        p.push(box(0.4, q.height + 0.1, 0.1, shut, { x: q.u + side * (q.width / 2 + 0.42), y, z: hd + 0.06, surface: 'wood' }));
+      }
     }
   } else {
     p.push(...door(0, w * 0.18, hd, 1.4, fh * 0.72, doorCol));
@@ -349,7 +499,7 @@ const colonial = (o) => {
       p.push(...wnd(0, u, y, hd, 0.95, 1.7, { arch: f === floors - 1 || i % 2 === 0, shutter: shut }));
     }
     if (balc) p.push(...balcony(0, 0, f * fh + 0.05, hd, Math.min(w - 2, 5.5), 0.9));
-    p.push(box(w + 0.2, 0.22, d + 0.2, C.trim, { y: f * fh - 0.05 }));
+    p.push(box(w + 0.2, 0.22, d + 0.2, C.trim, { y: f * fh - 0.05, surface: 'stone' }));
   }
   for (let f = 0; f < floors; f++) {
     const y = f * fh + (f ? 0.7 : 1.0);
@@ -358,7 +508,7 @@ const colonial = (o) => {
   }
   if (rear) p.push(...wnd(2, w * 0.2, 1.1, hd, 1.1, 1.5), ...wnd(2, -w * 0.2, 1.1, hd, 1.1, 1.5));
   if (awn) p.push(...awning(0, 0, fh * 0.82, hd, w * 0.7, 1.6, awn[0], awn[1]));
-  p.push(box(w + 0.5, 0.28, d + 0.5, C.trim, { y: H + 0.05 }));
+  p.push(box(w + 0.5, 0.28, d + 0.5, C.trim, { y: H + 0.05, surface: 'stone' }));
   if (flatRoof) {
     p.push(box(w + 0.1, 0.9, 0.4, wall, { y: H + 0.5, z: hd }), box(w + 0.1, 0.9, 0.4, wall, { y: H + 0.5, z: -hd }),
       box(0.4, 0.9, d, wall, { y: H + 0.5, x: w / 2 }), box(0.4, 0.9, d, wall, { y: H + 0.5, x: -w / 2 }));
@@ -381,7 +531,19 @@ const wall = (len, h, thick, col, o = {}) => box(len, h, thick, col, { y: h / 2,
 // ================================================================== protos
 export function buildProtos() {
   const P = {};
-  const add = (name, parts, opts) => (P[name] = makeProto(name, parts.flat(), opts));
+  const add = (name, parts, opts) => {
+    const proto = applyModelFinishes(makeProto(name, parts.flat(), opts), 'coastal');
+    if (opts?.windStart !== undefined) proto.windStart = opts.windStart;
+    return (P[name] = proto);
+  };
+  const addPalmLOD = (name, near, far, opts) => {
+    const proto = add(name, near, opts);
+    const geometryFar = applyModelFinishes(makeProto(`${name}Far`, far.flat(), opts), 'coastal').geometry;
+    matchGeometryBounds(proto.geometry, geometryFar);
+    applyWindWeights(geometryFar, proto.windStart);
+    proto.geometryFar = geometryFar;
+    return proto;
+  };
   const WALK = (speed = 1.3, range = 9) => ({ type: 'walk', speed, range });
 
   // ---------- tiny: garden + street
@@ -466,14 +628,14 @@ export function buildProtos() {
   add('dogB', dogModel('#3a3430', '#231f1d'), { move: WALK(1.8, 8), value: 0.25 });
 
   // ---------- trees
-  add('palmQueen', palm(9.5, 1.6, 9, 3.6, { tr: 0.22, boots: true }), { value: 1.4, radius: 2.4 });
-  add('palmQueenB', palm(11.5, -2.2, 9, 3.8, { tr: 0.24, boots: true }), { value: 1.7, radius: 2.5 });
-  add('palmMed', palm(6.5, 1.0, 8, 3.0, { tr: 0.2 }), { value: 0.9, radius: 2.0 });
-  add('palmFan', fanPalm(5.5), { value: 1.0 });
-  add('palmSmall', palm(3.0, 0.5, 7, 1.8, { tr: 0.13 }), { value: 0.4, radius: 1.3 });
-  add('oak', oakTree(1), { value: 2.2 });
-  add('oakSmall', oakTree(0.7), { value: 0.9 });
-  add('figTree', figTree(), { value: 22, radius: 7 });
+  addPalmLOD('palmQueen', palm(9.5, 1.6, 9, 3.6, { tr: 0.22, boots: true }), palm(9.5, 1.6, 9, 3.6, { tr: 0.22, boots: true, detail: false }), { value: 1.4, radius: 2.4, windStart: 7.125 });
+  addPalmLOD('palmQueenB', palm(11.5, -2.2, 9, 3.8, { tr: 0.24, boots: true }), palm(11.5, -2.2, 9, 3.8, { tr: 0.24, boots: true, detail: false }), { value: 1.7, radius: 2.5, windStart: 8.625 });
+  addPalmLOD('palmMed', palm(6.5, 1.0, 8, 3.0, { tr: 0.2 }), palm(6.5, 1.0, 8, 3.0, { tr: 0.2, detail: false }), { value: 0.9, radius: 2.0, windStart: 4.875 });
+  addPalmLOD('palmFan', fanPalm(5.5), fanPalm(5.5, false), { value: 1.0, windStart: 4.125 });
+  addPalmLOD('palmSmall', palm(3.0, 0.5, 7, 1.8, { tr: 0.13 }), palm(3.0, 0.5, 7, 1.8, { tr: 0.13, detail: false }), { value: 0.4, radius: 1.3, windStart: 2.25 });
+  add('oak', oakTree(1), { value: 2.2, windStart: 3.6 });
+  add('oakSmall', oakTree(0.7), { value: 0.9, windStart: 2.52 });
+  add('figTree', figTree(), { value: 22, radius: 7, windStart: 5.0 });
 
   // ---------- vehicles (length along X, front +X)
   const sedans = { sedanWhite: '#f2f2f0', sedanSilver: '#b9bec6', sedanRed: '#c02a2a', sedanBlue: '#2c5aa0', sedanBlack: '#26262a', sedanTeal: '#2a8f8a' };
@@ -529,23 +691,45 @@ const sailboat = (len, mastH, hullCol, sailCol, stripe) => {
 
 function buildBuildings(add) {
   const sh = [C.teal, C.blue, C.dgreen, C.dwood];
-  add('shopArcade', colonial({ w: 11, d: 9, floors: 2, arcade: true, bays: 3, balc: true, wall: C.stucco, shut: C.dwood }), { value: 4.5 });
-  add('shopArcadeB', colonial({ w: 12, d: 9, floors: 2, arcade: true, bays: 3, balc: true, wall: C.peach, shut: C.teal }), { value: 5 });
-  add('shopTiled', colonial({ w: 9, d: 8, floors: 2, balc: true, wall: C.pink, shut: sh[0], awn: [C.terra, C.trim] }), { value: 3.6 });
-  add('shopTiledB', colonial({ w: 10, d: 8, floors: 2, balc: true, wall: C.cream, shut: sh[1], awn: [C.navy, C.trim] }), { value: 3.8 });
-  add('shopLow', colonial({ w: 10, d: 7, floors: 1, wall: C.cream, tower: true, awn: [C.blue, C.trim] }), { value: 2.8 });
-  add('shopLowB', colonial({ w: 9, d: 7, floors: 1, wall: C.yellow, awn: [C.red, C.trim], shut: C.dgreen }), { value: 2.2 });
-  add('cafeShop', colonial({ w: 8, d: 6, floors: 1, wall: C.stucco, awn: [C.red, C.trim], shut: C.dgreen, chimney: false }), { value: 1.8 });
-  add('inn', colonial({ w: 14, d: 10, floors: 3, arcade: true, bays: 4, balc: true, wall: C.white, shut: C.dgreen }), { value: 9 });
-  add('hotelTower', colonial({ w: 10, d: 9, floors: 4, fh: 3.2, balc: true, wall: C.stucco, tower: true, shut: C.terra }), { value: 8 });
-  add('casita', colonial({ w: 7, d: 6, floors: 1, wall: C.stucco, shut: C.blue, pitch: 0.46 }), { value: 1.5 });
-  add('casitaB', colonial({ w: 7.5, d: 6.5, floors: 1, wall: C.peach, shut: C.dgreen, pitch: 0.44 }), { value: 1.7 });
-  add('casitaC', colonial({ w: 6.5, d: 6, floors: 1, wall: C.adobe, shut: C.teal, pitch: 0.48 }), { value: 1.4 });
-  add('hacienda', colonial({ w: 12, d: 8, floors: 1, arcade: true, bays: 3, wall: C.cream, shut: C.dwood, fh: 3.6 }), { value: 4.2 });
-  add('bungalow', colonial({ w: 8.5, d: 6.5, floors: 1, wall: C.sand, shut: C.terra, pitch: 0.4 }), { value: 2 });
-  add('aptSpanish', colonial({ w: 12, d: 10, floors: 3, balc: true, wall: C.pink, shut: C.dgreen, fh: 3.2 }), { value: 6 });
-  add('aptSpanishB', colonial({ w: 11, d: 9, floors: 3, balc: true, wall: C.stucco, shut: C.blue, fh: 3.2 }), { value: 5.5 });
-  add('officeBlock', colonial({ w: 13, d: 10, floors: 2, arcade: true, bays: 4, flatRoof: true, wall: C.sand, fh: 3.6 }), { value: 5 });
+  const W = C.white, S = C.stucco;
+  // Downtown: white stucco, barrel-tile roofs, arched windows / arcades, wrought-iron balconies, towers, courtyards.
+  add('shopArcade', colonial({ w: 11, d: 9, floors: 2, arcade: true, bays: 3, balc: true, wall: W, shut: C.dwood }), { value: 4.5 });
+  add('shopArcadeB', colonial({ w: 12, d: 9, floors: 2, arcade: true, bays: 3, balc: true, wall: S, shut: C.teal }), { value: 5 });
+  add('shopTiled', colonial({ w: 9, d: 8, floors: 2, balc: true, wall: W, shut: sh[0], awn: [C.terra, C.trim] }), { value: 3.6 });
+  add('shopTiledB', colonial({ w: 10, d: 8, floors: 2, balc: true, wall: S, shut: sh[1], awn: [C.navy, C.trim] }), { value: 3.8 });
+  add('shopLow', colonial({ w: 10, d: 7, floors: 1, wall: W, tower: true, awn: [C.blue, C.trim] }), { value: 2.8 });
+  add('shopLowB', colonial({ w: 9, d: 7, floors: 1, wall: S, awn: [C.red, C.trim], shut: C.dgreen, recessedFacade: true }), { value: 2.2 });
+  add('cafeShop', colonial({ w: 8, d: 6, floors: 1, wall: W, awn: [C.red, C.trim], shut: C.dgreen, chimney: false, recessedFacade: true }), { value: 1.8 });
+  add('inn', colonial({ w: 14, d: 10, floors: 3, arcade: true, bays: 4, balc: true, wall: W, shut: C.dgreen }), { value: 9 });
+  add('hotelTower', colonial({ w: 10, d: 9, floors: 3, fh: 3.3, balc: true, wall: W, tower: true, shut: C.terra }), { value: 7 });
+  add('towerHouse', colonial({ w: 8, d: 8, floors: 3, fh: 3.1, balc: true, wall: S, tower: true, shut: C.dgreen, chimney: false }), { value: 5 });
+  add('bankArcade', colonial({ w: 14, d: 10, floors: 2, arcade: true, bays: 4, balc: true, tower: true, wall: W, shut: C.navy, fh: 3.6 }), { value: 7 });
+  add('paseoRow', colonial({ w: 18, d: 7, floors: 1, arcade: true, bays: 5, wall: W, fh: 3.8, chimney: false }), { value: 5 });
+  add('casita', colonial({ w: 7, d: 6, floors: 1, wall: W, shut: C.blue, pitch: 0.46, recessedFacade: true }), { value: 1.5 });
+  add('casitaB', colonial({ w: 7.5, d: 6.5, floors: 1, wall: S, shut: C.dgreen, pitch: 0.44, recessedFacade: true }), { value: 1.7 });
+  add('casitaC', colonial({ w: 6.5, d: 6, floors: 1, wall: C.cream, shut: C.teal, pitch: 0.48, recessedFacade: true }), { value: 1.4 });
+  add('hacienda', colonial({ w: 12, d: 8, floors: 1, arcade: true, bays: 3, wall: W, shut: C.dwood, fh: 3.6 }), { value: 4.2 });
+  add('bungalow', colonial({ w: 8.5, d: 6.5, floors: 1, wall: C.cream, shut: C.terra, pitch: 0.4, recessedFacade: true }), { value: 2 });
+  add('aptSpanish', colonial({ w: 12, d: 10, floors: 3, balc: true, wall: W, shut: C.dgreen, fh: 3.2 }), { value: 6 });
+  add('aptSpanishB', colonial({ w: 11, d: 9, floors: 3, balc: true, wall: S, shut: C.blue, fh: 3.2 }), { value: 5.5 });
+  add('officeBlock', colonial({ w: 13, d: 10, floors: 2, arcade: true, bays: 4, flatRoof: true, wall: W, fh: 3.6 }), { value: 5 });
+  // Courtyard buildings: front range with arcade + balcony, two side wings and a rear range around a paved patio with a fountain.
+  const courtyard = (w, d, wall, floors, shut) => {
+    const FD = 5.5, RD = 5, SD = 4.4, p = [];
+    const cy = (d - FD - RD);
+    p.push(...xf(colonial({ w, d: FD, floors, arcade: true, bays: Math.max(3, Math.round(w / 4.4)), balc: true, wall, shut, rear: false, chimney: false }), { z: d / 2 - FD / 2 }));
+    p.push(...xf(colonial({ w, d: RD, floors: Math.max(1, floors - 1), wall, shut, rear: true, chimney: true }), { z: -d / 2 + RD / 2, ry: 0 }));
+    for (const s of [-1, 1]) p.push(...xf(colonial({ w: cy + 0.4, d: SD, floors: 1, wall, shut, rear: false, chimney: false }), { x: s * (w / 2 - SD / 2), z: d / 2 - FD - cy / 2, ry: -s * PI / 2 }));
+    p.push(box(w - 2 * SD, 0.1, cy, '#e4d3ac', { y: 0.06, z: d / 2 - FD - cy / 2 }));
+    const fz = d / 2 - FD - cy / 2;
+    p.push(lathe([[0.001, 0], [1.2, 0], [1.3, 0.25], [1.3, 0.6], [1.1, 0.62], [1.05, 0.3], [0.001, 0.3]], C.sand, { segments: 14, z: fz, y: 0.1 }),
+      cyl(0.16, 0.2, 1.3, C.sand, { y: 0.75, z: fz, segments: 8, flat: false }), sphere(0.4, C.oak2, { x: w / 2 - SD - 1.2, y: 1.8, z: fz + 1.2, segments: 8, rings: 5, flat: false }),
+      cyl(0.09, 0.11, 1.4, C.trunk, { x: w / 2 - SD - 1.2, y: 0.8, z: fz + 1.2, segments: 6 }));
+    return p;
+  };
+  add('courtyardA', courtyard(18, 16, W, 2, C.dgreen), { value: 12 });
+  add('courtyardB', courtyard(16, 14, S, 2, C.teal), { value: 10 });
+  add('courtyardC', courtyard(14, 13, W, 1, C.terra), { value: 7 });
   add('garage', [rbox(5, 3, 5.5, C.stucco, { y: 1.6, bevel: 0.15, segments: 1 }), ...gable(5, 5.5, 3.1, 0.4, C.tile, C.stucco), box(3.2, 2.4, 0.1, C.dwood, { y: 1.3, z: 2.78 }), ...wnd(1, 0, 1.2, 2.5, 0.9, 0.9)], { value: 0.9 });
 
   // Funk Zone
@@ -563,8 +747,8 @@ function buildBuildings(add) {
   };
   add('funkWarehouse', funk(11, 9, '#7ea3b8', C.orange, C.teal, '#93a4ae'), { value: 3.4 });
   add('funkWarehouseB', funk(10, 8, '#d9a35b', C.blue, C.red, '#8e9aa2'), { value: 3 });
-  add('wineBar', colonial({ w: 8, d: 7, floors: 1, wall: C.terra, awn: [C.navy, C.trim], shut: C.trim, chimney: false }), { value: 2.2 });
-  add('wineBarB', colonial({ w: 9, d: 7, floors: 1, wall: '#c9a55c', awn: [C.dgreen, C.trim], shut: C.dwood }), { value: 2.4 });
+  add('wineBar', colonial({ w: 8, d: 7, floors: 1, wall: C.terra, awn: [C.navy, C.trim], shut: C.trim, chimney: false, recessedFacade: true }), { value: 2.2 });
+  add('wineBarB', colonial({ w: 9, d: 7, floors: 1, wall: '#c9a55c', awn: [C.dgreen, C.trim], shut: C.dwood, recessedFacade: true }), { value: 2.4 });
 
   // Stearns Wharf
   add('wharfShop', wharfShack(7, 5, '#efe6cf', C.blue, C.red, { barrels: true }), { value: 2.4 });
@@ -605,61 +789,65 @@ const simpleCar = (x, z, ry, col, y0) => [
   box(1.9, 0.36, 1.54, C.glass, { x: x - Math.cos(ry) * 0.2, y: y0 + 1.22, z: z + Math.sin(ry) * 0.2, ry }),
 ];
 
+export const MISSION_STAIR = 7.1; // distance from the church facade wall to the front of the stone stair
+
+const statue = (x, y, z, col) => [
+  box(0.7, 0.5, 0.7, col, { x, y: y + 0.25, z }), cyl(0.2, 0.3, 1.1, col, { x, y: y + 1.05, z, segments: 6 }),
+  sphere(0.2, col, { x, y: y + 1.75, z, segments: 6, rings: 4 }), box(0.7, 0.12, 0.12, col, { x, y: y + 1.4, z }),
+];
+
 function missionChurch() {
-  const st = C.mission, sd = C.missiond;
-  const p = [rbox(14, 12, 20, st, { y: 6, z: -5, bevel: 0.2, segments: 1 }), ...xf(gable(20, 14, 12.1, 0.42, C.tile, st, 0.6), { ry: PI / 2, z: -5 })];
-  // facade slab + stepped gable
-  p.push(rbox(14.4, 13.5, 1.8, st, { y: 6.75, z: 5, bevel: 0.15, segments: 1 }), extrude([[-7.2, 0], [7.2, 0], [7.2, 0.6], [3.4, 1.2], [3.4, 2.4], [0, 3.8]], 1.8, st, { y: 13.5, z: 5 }));
-  p.push(box(14.8, 0.4, 2.1, sd, { y: 13.4, z: 5 }), box(0.14, 1.8, 0.14, C.gold, { y: 18.6, z: 5 }), box(0.9, 0.14, 0.14, C.gold, { y: 18.2, z: 5 }));
-  // portico: steps, six columns, entablature, pediment
-  p.push(box(13.6, 0.25, 4.4, sd, { y: 0.125, z: 8.1 }), box(13.0, 0.25, 3.8, sd, { y: 0.375, z: 8.0 }), box(12.6, 0.2, 3.3, st, { y: 0.6, z: 7.6 }));
+  const st = '#efd7c6', sd = '#dcbca4', stone = '#d8c7a8', terra = '#b9503a';
+  const NH = 9.6, p = [];
+  // nave (z -13 .. 6) with tile gable roof
+  p.push(rbox(14, NH, 19, st, { y: NH / 2, z: -3.5, bevel: 0.2, segments: 1 }), ...xf(gable(19.4, 14, NH + 0.1, 0.34, C.tile, st, 0.6), { ry: PI / 2, z: -3.5 }));
+  for (const f of [1, 3]) for (const u of [1.5, 7, 11.5]) p.push(...wnd(f, u * (f === 1 ? 1 : -1), 4.2, 7.0, 1.1, 3.6, { arch: true, frame: sd }));
+  for (const s of [-1, 1]) for (const z of [-1.5, -5, -8.5, -11.5]) p.push(box(0.7, 8.4, 0.9, sd, { x: s * 7.3, y: 4.2, z }));
+  // facade wall + cornice
+  p.push(rbox(15.6, NH, 1.8, st, { y: NH / 2, z: 5.1, bevel: 0.12, segments: 1 }), box(15.9, 0.35, 2.1, sd, { y: NH + 0.1, z: 5.2 }));
+  // podium + stone stair
+  p.push(box(12.8, 1.2, 2.6, stone, { y: 0.6, z: 7.3 }));
+  for (let j = 0; j < 5; j++) { const d = (5 - j) * 0.9, h = 0.24 * (j + 1); p.push(box(13.4, h, d, stone, { y: h / 2, z: 8.6 + d / 2 })); }
+  // six engaged Ionic columns carrying the entablature and the pediment
   for (let i = 0; i < 6; i++) {
-    const x = -4.5 + i * 1.8;
-    p.push(cyl(0.48, 0.55, 7.4, st, { x, y: 4.5, z: 7.7, segments: 12, flat: false }), box(1.3, 0.3, 1.3, sd, { x, y: 8.3, z: 7.7 }), box(1.2, 0.3, 1.2, sd, { x, y: 0.85, z: 7.7 }),
-      torus(0.5, 0.09, sd, { x, y: 7.9, z: 7.7, rx: PI / 2, radial: 4, segments: 10 }));
+    const x = -4.75 + i * 1.9;
+    p.push(cyl(0.44, 0.5, 6.6, st, { x, y: 4.5, z: 6.55, segments: 14, flat: false }), box(1.15, 0.25, 1.15, sd, { x, y: 1.33, z: 6.55 }),
+      box(1.25, 0.22, 1.25, sd, { x, y: 7.9, z: 6.55 }), torus(0.2, 0.07, sd, { x: x - 0.42, y: 7.7, z: 7.12, radial: 4, segments: 8 }), torus(0.2, 0.07, sd, { x: x + 0.42, y: 7.7, z: 7.12, radial: 4, segments: 8 }));
   }
-  p.push(box(12.8, 1.2, 3.0, sd, { y: 8.95, z: 7.1 }), extrude([[-6.5, 0], [6.5, 0], [0, 3.0]], 3.0, st, { y: 9.55, z: 7.1 }), extrude([[-5.4, 0.05], [5.4, 0.05], [0, 2.4]], 0.2, sd, { y: 9.7, z: 8.65 }));
-  p.push(cyl(0.9, 0.9, 0.1, C.glass2, { y: 10.6, z: 8.65, rx: PI / 2, segments: 16, flat: false }), torus(0.95, 0.09, sd, { y: 10.6, z: 8.62, radial: 4, segments: 16 }));
-  p.push(...door(0, 0, 6.0, 2.1, 4.6, C.dwood, sd), ...door(0, -3.6, 6.0, 1.4, 3.6, C.dwood, sd), ...door(0, 3.6, 6.0, 1.4, 3.6, C.dwood, sd));
-  // nave windows + buttresses
-  for (const f of [1, 3]) for (const u of [2, 8, 14]) p.push(...wnd(f, u * (f === 1 ? 1 : -1), 4.2, 7.0, 1.1, 3.6, { arch: true, frame: sd }));
-  for (const s of [-1, 1]) for (const z of [-1.5, -5, -8.5, -12]) p.push(box(0.7, 9, 0.9, sd, { x: s * 7.3, y: 4.5, z }));
-  // towers
+  p.push(box(11.6, 0.75, 1.8, sd, { y: 8.2, z: 6.95 }), box(11.6, 0.75, 1.65, st, { y: 8.95, z: 6.9 }), box(12.4, 0.3, 2.4, sd, { y: 9.5, z: 7.0 }));
+  p.push(extrude([[-6.1, 0], [6.1, 0], [0, 2.7]], 1.6, st, { y: 9.65, z: 6.9 }), extrude([[-4.9, 0.1], [4.9, 0.1], [0, 2.15]], 0.2, sd, { y: 9.8, z: 7.75 }));
+  p.push(cyl(0.6, 0.6, 0.1, C.glass2, { y: 10.75, z: 7.85, rx: PI / 2, segments: 16, flat: false }), torus(0.65, 0.09, sd, { y: 10.75, z: 7.88, radial: 4, segments: 16 }));
+  // statues on the pediment corners and apex
+  p.push(...statue(-5.7, 9.65, 7.3, '#f4ead8'), ...statue(5.7, 9.65, 7.3, '#f4ead8'), ...statue(0, 12.3, 6.9, '#f4ead8'));
+  // door, windows and niches between the columns
+  p.push(...door(0, 0, 6.02, 1.5, 3.9, C.dwood, sd), ...wnd(0, -1.9, 2.4, 6.02, 1.0, 3.3, { arch: true, frame: sd, mull: false }), ...wnd(0, 1.9, 2.4, 6.02, 1.0, 3.3, { arch: true, frame: sd, mull: false }));
+  for (const s of [-1, 1]) p.push(extrude(archPts(1.2, 3.0), 0.12, '#a98a72', { x: s * 3.8, y: 2.2, z: 6.05 }));
+  // twin bell towers: plain shaft, two arched belfry stages holding bells, small domed cupola with a cross
   for (const s of [-1, 1]) {
-    const t = [rbox(5.2, 13.6, 5.8, st, { y: 6.8, bevel: 0.15, segments: 1 }), box(5.6, 0.4, 6.2, sd, { y: 13.7 })];
-    t.push(...wnd(0, 0, 3.2, 2.9, 1.0, 2.6, { arch: true, frame: sd, mull: false }), ...wnd(0, 0, 8.0, 2.9, 0.9, 1.9, { arch: true, frame: sd, mull: false }), ...wnd(0, 0, 11.2, 2.9, 0.8, 1.4, { arch: true, frame: sd, mull: false }));
-    t.push(...wnd(s > 0 ? 1 : 3, 0, 5.5, 2.6, 0.9, 2.2, { arch: true, frame: sd, mull: false }), ...wnd(s > 0 ? 1 : 3, 0, 9.6, 2.6, 0.9, 1.8, { arch: true, frame: sd, mull: false }));
-    t.push(...xf(belfry(4.9, 4.4, st, sd), { y: 13.9 }));
-    t.push(dome(2.8, 3.6, '#b9503a', { y: 19.05 }), cyl(0.42, 0.42, 0.9, st, { y: 22.4, segments: 10, flat: false }), dome(0.5, 0.7, '#b9503a', { y: 23.3 }), box(0.12, 1.1, 0.12, C.gold, { y: 24.4 }), box(0.55, 0.12, 0.12, C.gold, { y: 24.3 }));
-    p.push(...xf(t, { x: s * 9.55, z: 3.2 }));
+    const t = [rbox(5.4, 9.8, 5.6, st, { y: 4.9, bevel: 0.12, segments: 1 }), box(5.9, 0.4, 6.1, sd, { y: 9.9 })];
+    t.push(...wnd(0, 0, 2.4, 2.8, 1.0, 2.6, { arch: true, frame: sd, mull: false }), ...wnd(0, 0, 6.6, 2.8, 0.8, 1.7, { arch: true, frame: sd, mull: false }));
+    t.push(...wnd(s > 0 ? 1 : 3, 0, 3.0, 2.7, 0.9, 2.2, { arch: true, frame: sd, mull: false }), ...wnd(s > 0 ? 1 : 3, 0, 6.8, 2.7, 0.8, 1.6, { arch: true, frame: sd, mull: false }));
+    t.push(...xf(belfry(4.7, 3.6, st, sd), { y: 10.1 }), ...xf(belfry(3.6, 3.0, st, sd), { y: 14.2 }));
+    t.push(dome(2.25, 3.0, terra, { y: 17.7 }), cyl(0.4, 0.4, 0.8, st, { y: 20.9, segments: 10, flat: false }), dome(0.5, 0.6, terra, { y: 21.6 }), box(0.12, 1.1, 0.12, C.gold, { y: 22.75 }), box(0.55, 0.12, 0.12, C.gold, { y: 22.9 }));
+    p.push(...xf(t, { x: s * 9.6, z: 3.3 }));
   }
   return p;
 }
 
+/** Convento wing: long single-storey arcade of many round arches under a red tile roof (front toward +Z). */
 function missionWing() {
-  const st = C.mission, sd = C.missiond;
-  const bays = 6, bw = 2.5, pier = 1.15, { pts, L } = arcadePts(bays, bw, pier, 5.4, 5.4 - bw / 2 - 0.5, 6);
-  const p = [rbox(L, 6.4, 7.2, st, { y: 3.2, z: -0.8, bevel: 0.18, segments: 1 }), box(L + 0.3, 0.4, 8.2, sd, { y: 0.2, z: -0.3 })];
-  p.push(box(L - 0.4, 5.2, 0.14, '#4a3226', { y: 3.1, z: 2.85 }), extrude(pts, 1.2, st, { y: 0.2, z: 3.3 }), box(L + 0.3, 0.5, 1.8, sd, { y: 5.85, z: 3.3 }));
+  const st = '#efd7c6', sd = '#dcbca4';
+  const bays = 8, bw = 2.1, pier = 0.85, WH = 4.7, { pts, L } = arcadePts(bays, bw, pier, WH, WH - bw / 2 - 0.4, 7);
+  const p = [rbox(L, 5.6, 6.8, st, { y: 2.8, z: -0.8, bevel: 0.18, segments: 1 }), box(L + 0.3, 0.4, 8.6, sd, { y: 0.2, z: -0.1 })];
+  p.push(box(L - 0.4, WH - 0.6, 0.14, '#4a3226', { y: WH / 2 + 0.1, z: 2.55 }), extrude(pts, 1.2, st, { y: 0.2, z: 3.05 }), box(L + 0.3, 0.45, 1.7, sd, { y: WH + 0.45, z: 3.0 }));
   for (let i = 0; i < bays; i++) {
     const u = -L / 2 + pier + bw / 2 + i * (bw + pier);
-    p.push(...door(0, u, 2.9, 1.2, 3.0, C.dwood, sd), ...wnd(2, u, 2.6, 3.4, 1.0, 1.8, { arch: true, frame: sd }));
+    p.push(...(i % 2 ? wnd(0, u, 1.3, 2.6, 1.0, 2.0, { arch: true, frame: sd }) : door(0, u, 2.6, 1.1, 2.8, C.dwood, sd)), ...wnd(2, u, 1.6, 2.6, 1.0, 1.8, { arch: true, frame: sd }));
   }
-  p.push(...gable(L, 10.2, 6.4, 0.36, C.tile, st, 0.5).map((g) => (g.translate(0, 0, 0.4), g)));
-  for (const s of [-1, 1]) p.push(...wnd(s > 0 ? 1 : 3, 0, 2.6, L / 2, 1.0, 2.2, { arch: true, frame: sd }));
-  // espadana (bell gable) on the roof
-  p.push(extrude([[-1.6, 0], [1.6, 0], [1.6, 2.2], [0.9, 2.6], [0.9, 3.8], [0, 4.6], [-0.9, 3.8], [-0.9, 2.6], [-1.6, 2.2]], 0.9, st, { x: L * 0.3, y: 8.2, z: -0.5 }), ...bell(L * 0.3, 9.0, -0.5, 0.8));
+  p.push(...gable(L, 10.0, 5.7, 0.34, C.tile, st, 0.5).map((g) => (g.translate(0, 0, 0.3), g)));
+  for (const s of [-1, 1]) p.push(...wnd(s > 0 ? 1 : 3, 0, 1.8, L / 2, 1.0, 2.2, { arch: true, frame: sd }));
+  p.push(extrude([[-1.4, 0], [1.4, 0], [1.4, 1.8], [0.8, 2.2], [0.8, 3.2], [0, 3.9], [-0.8, 3.2], [-0.8, 2.2], [-1.4, 1.8]], 0.8, st, { x: -L * 0.3, y: 8.0, z: -0.4 }), ...bell(-L * 0.3, 8.6, -0.4, 0.7));
   return p;
-}
-
-function missionFountain() {
-  return [
-    lathe([[0.001, 0], [3.1, 0], [3.35, 0.35], [3.35, 1.0], [3.0, 1.05], [2.9, 0.65], [0.001, 0.65]], C.mission, { segments: 24 }),
-    cyl(2.85, 2.85, 0.05, C.water, { y: 0.68, segments: 24, flat: false }),
-    lathe([[0.001, 0.6], [0.6, 0.6], [0.4, 1.0], [0.28, 1.7], [0.7, 2.0], [1.3, 2.2], [1.4, 2.4], [1.1, 2.4], [0.95, 2.28], [0.001, 2.28]], C.mission, { segments: 20 }),
-    lathe([[0.001, 2.2], [0.3, 2.3], [0.2, 3.0], [0.55, 3.25], [0.4, 3.4], [0.001, 3.4]], C.mission, { segments: 14 }),
-    cone(0.16, 1.2, '#cfe9f5', { y: 4.0, segments: 8, flat: false }), cyl(1.05, 1.05, 0.05, C.water, { y: 2.42, segments: 16, flat: false }),
-  ];
 }
 
 function courthouse() {
@@ -707,32 +895,93 @@ function courthouse() {
 }
 
 function bridge() {
-  const con = C.concrete, dc = C.dconcrete;
-  const p = [rbox(20, 1.4, 12, con, { y: 5.3, bevel: 0.15, segments: 1 }), box(20.2, 0.5, 12.2, '#9c998f', { y: 4.4 })];
+  const con = C.concrete, dc = C.dconcrete, HW = 14;
+  const p = [rbox(2 * HW, 1.4, 12, con, { y: 5.3, bevel: 0.15, segments: 1 }), box(2 * HW + 0.2, 0.5, 12.2, '#9c998f', { y: 4.4 })];
   for (const s of [-1, 1]) {
+    // abutments on both sides of the State Street opening, with arched relief panels
+    p.push(rbox(2.6, 4.5, 11.6, con, { x: s * (HW - 1.3), y: 2.25, bevel: 0.12, segments: 1 }));
+    for (const z of [-3.6, 0, 3.6]) p.push(extrude(archPts(2.4, 3.4), 0.15, dc, { x: s * (HW - 2.65), y: 0.4, z, ry: PI / 2 }));
     // ramps at both ends (solid embankments)
-    p.push(extrude([[0, 0], [5, 0], [0, 6]], 12, con, { x: s > 0 ? 10 : -10, ry: 0, sx: s }));
-    p.push(box(7.8, 0.08, 10.6, C.asphalt, { x: s * 12.5, y: 3.06, rz: s * -0.876 }));
-    p.push(box(7.8, 0.6, 0.5, dc, { x: s * 12.5, y: 3.4, z: 5.75, rz: s * -0.876 }), box(7.8, 0.6, 0.5, dc, { x: s * 12.5, y: 3.4, z: -5.75, rz: s * -0.876 }));
+    p.push(extrude([[0, 0], [5, 0], [0, 6]], 12, con, { x: s * HW, ry: 0, sx: s }));
+    p.push(box(7.8, 0.08, 10.6, C.asphalt, { x: s * (HW + 2.5), y: 3.06, rz: s * -0.876 }));
+    p.push(box(7.8, 0.6, 0.5, dc, { x: s * (HW + 2.5), y: 3.4, z: 5.75, rz: s * -0.876 }), box(7.8, 0.6, 0.5, dc, { x: s * (HW + 2.5), y: 3.4, z: -5.75, rz: s * -0.876 }));
   }
-  p.push(box(20, 0.08, 10.6, C.asphalt, { y: 6.04 }));
-  for (let x = -9; x <= 9; x += 3) p.push(box(1.6, 0.03, 0.14, C.yellow, { x, y: 6.1 }), box(1.6, 0.03, 0.12, C.white2, { x: x + 1.5, y: 6.1, z: 2.6 }), box(1.6, 0.03, 0.12, C.white2, { x: x + 1.5, y: 6.1, z: -2.6 }));
-  p.push(box(20, 0.05, 0.16, C.white2, { y: 6.1, z: 5.0 }), box(20, 0.05, 0.16, C.white2, { y: 6.1, z: -5.0 }));
-  // parapets with railings
+  p.push(box(2 * HW, 0.08, 10.6, C.asphalt, { y: 6.04 }));
+  for (let x = -HW + 1; x <= HW - 2; x += 3) p.push(box(1.6, 0.03, 0.14, C.yellow, { x, y: 6.1 }), box(1.6, 0.03, 0.12, C.white2, { x: x + 1.5, y: 6.1, z: 2.6 }), box(1.6, 0.03, 0.12, C.white2, { x: x + 1.5, y: 6.1, z: -2.6 }));
   for (const z of [-5.75, 5.75]) {
-    p.push(box(20, 0.9, 0.5, dc, { y: 6.5, z }), box(20.3, 0.16, 0.7, con, { y: 7.02, z }));
-    for (let x = -9.5; x <= 9.5; x += 1.9) p.push(box(0.3, 1.3, 0.3, dc, { x, y: 7.7, z }));
-    p.push(box(20, 0.1, 0.1, C.iron, { y: 8.3, z }), box(20, 0.08, 0.08, C.iron, { y: 7.6, z }));
+    p.push(box(2 * HW, 0.9, 0.5, dc, { y: 6.5, z }), box(2 * HW + 0.3, 0.16, 0.7, con, { y: 7.02, z }));
+    for (let x = -HW + 0.5; x <= HW - 0.4; x += 1.9) p.push(box(0.3, 1.3, 0.3, dc, { x, y: 7.7, z }));
+    p.push(box(2 * HW, 0.1, 0.1, C.iron, { y: 8.3, z }), box(2 * HW, 0.08, 0.08, C.iron, { y: 7.6, z }));
   }
-  // arched fascia + piers underneath
-  const { pts } = arcadePts(3, 4.2, 1.0, 4.4, 2.0, 8);
-  for (const z of [-5.4, 5.4]) p.push(extrude(pts, 0.9, con, { z }), extrude(pts.map(([x, y]) => [x, y]), 0.3, dc, { z: z + (z > 0 ? 0.55 : -0.55) }));
-  for (const x of [-9.4, -4.2, 4.2, 9.4]) for (const z of [-5.2, 5.2]) p.push(cyl(0.6, 0.7, 4.4, con, { x, y: 2.2, z, segments: 12, flat: false }));
-  // street lights
+  // deck fascia beams over the opening
+  for (const z of [-5.4, 5.4]) p.push(box(2 * HW - 5, 0.9, 0.6, con, { y: 4.1, z }));
   for (const x of [-8, 8]) for (const z of [-5.75, 5.75]) p.push(cyl(0.08, 0.1, 2.4, C.iron, { x, y: 7.6 + 1.2, z, segments: 6 }), box(0.2, 0.12, 0.8, C.iron, { x, y: 10.1, z: z * 0.9 }));
-  // static traffic on the deck
-  p.push(...simpleCar(-6, 1.7, 0, '#c02a2a', 6.08), ...simpleCar(-1, 1.7, 0, '#2c5aa0', 6.08), ...simpleCar(5, 2.9, 0, '#f0efe8', 6.08), ...simpleCar(-4, -1.8, PI, '#26262a', 6.08), ...simpleCar(3, -2.9, PI, '#b9bec6', 6.08), ...simpleCar(8, -1.7, PI, '#2a8f8a', 6.08));
-  p.push(rbox(6.4, 2.4, 2.3, '#eeeeea', { x: 7.5, y: 7.4, z: 2.6, bevel: 0.15, segments: 1 }), box(1.2, 1.0, 2.2, C.glass, { x: 10.6, y: 7.0, z: 2.6 }).translate(0, 0, 0));
+  p.push(...simpleCar(-8, 1.7, 0, '#c02a2a', 6.08), ...simpleCar(-3, 1.7, 0, '#2c5aa0', 6.08), ...simpleCar(5, 2.9, 0, '#f0efe8', 6.08), ...simpleCar(-6, -1.8, PI, '#26262a', 6.08), ...simpleCar(3, -2.9, PI, '#b9bec6', 6.08), ...simpleCar(9, -1.7, PI, '#2a8f8a', 6.08));
+  p.push(rbox(6.4, 2.4, 2.3, '#eeeeea', { x: 8.5, y: 7.4, z: 2.6, bevel: 0.15, segments: 1 }));
+  return p;
+}
+
+// ------------------------------------------------------------------ Amtrak station + trains
+function trainStation() {
+  const wall = '#f3e6cc', sd = '#d9c39a', hd = 4.2, p = [];
+  p.push(box(24.4, 0.5, 8.8, sd, { y: 0.25 }), rbox(24, 5.4, 8.4, wall, { y: 2.7, bevel: 0.15, segments: 1 }));
+  // arched front arcade (loggia)
+  const { pts, L } = arcadePts(7, 2.2, 0.9, 4.2, 4.2 - 1.1 - 0.2, 6);
+  p.push(box(L - 0.4, 3.9, 0.14, '#5a4030', { y: 2.2, z: hd + 0.15 }), extrude(pts, 1.3, wall, { y: 0.25, z: hd + 0.65 }), box(L + 0.8, 0.4, 1.9, C.trim, { y: 4.65, z: hd + 0.65 }));
+  for (let i = 0; i < 7; i++) {
+    const u = -L / 2 + 0.9 + 1.1 + i * 3.1;
+    p.push(...(i === 3 ? door(0, u, hd + 0.2, 1.5, 3.2, C.dwood, C.trim) : i % 2 ? wnd(0, u, 1.3, hd + 0.2, 1.3, 2.2, { arch: true }) : door(0, u, hd + 0.2, 1.2, 2.6, C.dwood, C.trim)));
+  }
+  p.push(tilePanel(L + 0.6, 2.2, C.tile, { y: 5.15, z: hd + 1.3, rx: 0.3, h: 0.22 }));
+  // roof + mission-style shaped parapet over the entrance
+  p.push(...gable(24.6, 8.4, 5.5, 0.4, C.tile, wall, 0.6));
+  p.push(extrude([[-3.6, 0], [3.6, 0], [3.6, 1.3], [2.7, 1.7], [2.7, 2.6], [1.5, 3.1], [1.5, 3.9], [0, 4.6], [-1.5, 3.9], [-1.5, 3.1], [-2.7, 2.6], [-2.7, 1.7], [-3.6, 1.3]], 0.9, wall, { y: 4.85, z: hd + 0.4 }));
+  p.push(cyl(0.6, 0.6, 0.1, C.glass2, { y: 7.3, z: hd + 0.9, rx: PI / 2, segments: 14, flat: false }), box(7.4, 0.3, 1.2, sd, { y: 4.9, z: hd + 0.45 }));
+  p.push(box(6.6, 0.85, 0.14, C.navy, { y: 5.6, z: hd + 1.0 }));
+  'SANTABARBARA'.split('').forEach((c, i) => p.push(box(0.3, 0.5, 0.06, C.white2, { x: -2.75 + i * 0.5, y: 5.6, z: hd + 1.1 })));
+  // bell tower with belfry and tiled pyramid roof
+  const T = [rbox(4.4, 9.6, 4.4, wall, { y: 4.8, bevel: 0.12, segments: 1 }), box(4.9, 0.35, 4.9, sd, { y: 9.7 })];
+  for (let f = 0; f < 4; f++) T.push(...wnd(f, 0, 5.6, 2.2, 0.8, 1.9, { arch: true, frame: C.trim, mull: false }));
+  T.push(...xf(belfry(3.6, 2.6, wall, sd), { y: 9.9 }), pyramid(4.6, 2.8, C.tile, { y: 13.5 }), sphere(0.2, C.gold, { y: 16.5, segments: 6, rings: 4 }));
+  p.push(...xf(T, { x: -8.8, z: 0.4 }));
+  for (const u of [-6, -2, 2, 6]) p.push(...wnd(2, u, 1.4, hd, 1.2, 2.2, { arch: true }));
+  for (const s of [-1, 1]) p.push(...wnd(s > 0 ? 1 : 3, 0, 1.6, 12, 1.0, 2.0, { arch: true }));
+  return p;
+}
+function amtrakLoco() {
+  const sil = '#dfe2e6', red = '#c8102e', blue = '#12326b', dark = '#2a2c30';
+  const p = [extrude([[-8, 0.9], [5.4, 0.9], [7.9, 1.5], [8, 3.0], [6.2, 4.1], [-8, 4.1]], 3.0, sil), box(15.8, 0.6, 2.4, dark, { y: 0.6 }),
+    box(14, 0.28, 3.06, red, { x: -1.6, y: 2.1 }), box(14, 0.28, 3.06, blue, { x: -1.6, y: 1.72 }), box(0.14, 1.0, 2.5, C.glass, { x: 7.1, y: 3.45, rz: -0.55 }),
+    box(2.6, 0.6, 3.05, C.glass, { x: 3.6, y: 3.45 }), box(3.4, 0.16, 2.0, dark, { x: -3, y: 4.15 }), box(0.14, 0.32, 0.5, '#fff5b0', { x: 7.97, y: 2.3, z: 0.7 }), box(0.14, 0.32, 0.5, '#fff5b0', { x: 7.97, y: 2.3, z: -0.7 })];
+  for (const x of [-6.2, -4.4, 4.4, 6.2]) p.push(...wheel(x, 0.5, 1.2, 0.5, 0.3), ...wheel(x, 0.5, -1.2, 0.5, 0.3));
+  return p;
+}
+function amtrakCar() {
+  const sil = '#dfe2e6', red = '#c8102e', blue = '#12326b', dark = '#2a2c30';
+  const p = [rbox(16, 3.3, 3.0, sil, { y: 2.5, bevel: 0.2, segments: 1 }), box(15.8, 0.6, 2.4, dark, { y: 0.6 }), rbox(15.6, 0.3, 2.5, '#b8bcc2', { y: 4.25, bevel: 0.1, segments: 1 }),
+    box(15.9, 0.26, 3.04, red, { y: 1.75 }), box(15.9, 0.26, 3.04, blue, { y: 1.43 })];
+  for (let i = 0; i < 11; i++) p.push(box(0.9, 0.85, 3.04, C.glass, { x: -6.3 + i * 1.26, y: 3.05 }));
+  for (const s of [-1, 1]) p.push(box(1.1, 2.3, 3.05, '#b8bcc2', { x: s * 7.3, y: 2.2 }));
+  for (const x of [-5.6, -3.9, 3.9, 5.6]) p.push(...wheel(x, 0.5, 1.2, 0.5, 0.3), ...wheel(x, 0.5, -1.2, 0.5, 0.3));
+  return p;
+}
+const shade = (c) => '#' + c.slice(1).match(/../g).map((h) => Math.round(parseInt(h, 16) * 0.8).toString(16).padStart(2, '0')).join('');
+function freightCar(col) {
+  const p = [rbox(13, 3.2, 2.8, col, { y: 2.6, bevel: 0.1, segments: 1 }), box(13.2, 0.4, 2.2, '#2a2c30', { y: 0.7 }), box(13.2, 0.14, 3.0, '#3a3a3e', { y: 4.25 })];
+  for (let i = 0; i < 9; i++) p.push(box(0.14, 3.0, 2.86, shade(col), { x: -5.6 + i * 1.4, y: 2.6 }));
+  for (const x of [-4.6, 4.6]) p.push(...wheel(x, 0.5, 1.1, 0.5, 0.3), ...wheel(x, 0.5, -1.1, 0.5, 0.3));
+  return p;
+}
+function platformShelter() {
+  const p = [];
+  for (const x of [-4, 0, 4]) for (const z of [-1.2, 1.2]) p.push(box(0.16, 3.1, 0.16, C.iron, { x, y: 1.55, z }));
+  p.push(tilePanel(9.4, 2.2, C.tile, { y: 3.4, z: 1.1, rx: 0.2 }), tilePanel(9.4, 2.2, C.tile, { y: 3.4, z: -1.1, rx: -0.2 }), box(9.4, 0.18, 0.4, C.dtile, { y: 3.72 }));
+  p.push(box(3.4, 0.08, 0.5, C.lwood, { y: 0.5, z: -0.9 }), box(3.4, 0.45, 0.06, C.lwood, { y: 0.85, z: -1.12 }));
+  return p;
+}
+function crossingSignal() {
+  const p = [cyl(0.09, 0.1, 3.4, C.iron, { y: 1.7, segments: 6 }), box(1.9, 0.22, 0.05, C.white2, { y: 3.2, rz: 0.6, z: 0.08 }), box(1.9, 0.22, 0.05, C.white2, { y: 3.2, rz: -0.6, z: 0.08 }),
+    box(0.6, 0.4, 0.2, C.iron, { y: 2.4, z: 0.1 }), sphere(0.11, C.red, { x: -0.15, y: 2.4, z: 0.22, segments: 6, rings: 4 }), sphere(0.11, C.red, { x: 0.15, y: 2.4, z: 0.22, segments: 6, rings: 4 })];
   return p;
 }
 
@@ -809,9 +1058,15 @@ function arbor() {
 function buildLandmarks(add) {
   add('missionChurch', missionChurch(), { value: 100 });
   add('missionWing', missionWing(), { value: 18 });
-  add('missionFountain', missionFountain(), { value: 3 });
+  add('trainStation', trainStation(), { value: 30, radius: 9.5 });
+  add('amtrakLoco', amtrakLoco(), { value: 9 });
+  add('amtrakCar', amtrakCar(), { value: 7 });
+  add('freightCarA', freightCar('#8a3b26'), { value: 5 });
+  add('freightCarB', freightCar('#3f5f7a'), { value: 5 });
+  add('platformShelter', platformShelter(), { value: 3 });
+  add('crossingSignal', crossingSignal(), { value: 0.6 });
   add('courthouse', courthouse(), { value: 95, radius: 13.5 });
-  add('freewayBridge', bridge(), { value: 42, radius: 11.5 });
+  add('freewayBridge', bridge(), { value: 42, radius: 10.5 });
   add('chromaticGate', chromaticGate(), { value: 26 });
   add('superCucas', superCucas(), { value: 14 });
   add('dolphinFountain', dolphinFountain(), { value: 3 });

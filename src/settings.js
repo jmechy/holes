@@ -10,7 +10,7 @@ const defaults = {
   progress: 0, // Adventure: index of the highest unlocked map (== MAPS.length when beaten)
   best: {}, // mapId -> best Time Attack size
   arcadeBest: {}, // mapId -> best Arcade score
-  graphics: 'high', // 'high' | 'low'
+  graphics: 'auto', // 'auto' (adaptive, starts High) | 'high' | 'low'
 };
 
 let cache = null;

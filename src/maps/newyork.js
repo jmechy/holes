@@ -26,6 +26,13 @@ export default {
   lightColor: '#fff6e0',
   ambient: 0.62,
   groundStyle: 'concrete',
+  // Crisp, cool afternoon: low-ish sun for long, sharp canyon shadows and a cool blue sky fill.
+  lighting: {
+    sunDirection: [-52, 40, 34], sunColor: '#fff3de', sunIntensity: 0.8 * Math.PI,
+    hemiSkyColor: '#b9d8f8', hemiGroundColor: '#8b8f9c', hemiIntensity: 0.56 * Math.PI,
+    shadowOpacity: 0.82, shadowRadius: 2.0, environmentIntensity: 0.32, exposure: 1.02,
+  },
+  postProcessing: { aoRadius: 0.6, aoStrength: 0.18 },
   sky: { top: '#5aa8ee', horizon: '#c9e2f5' },
   clouds: true,
   backdrop: [{ type: 'city', color: '#9aa8bb', color2: '#6e7580', oceanSide: 'west', oceanColor: '#3f8fd0', sandColor: '#b7b7bd' }],
@@ -97,7 +104,7 @@ export default {
     // Central Park
     const { x0, x1, z0, z1 } = PARK;
     const pcx = (x0 + x1) / 2, pcz = (z0 + z1) / 2;
-    addDecal(rect(pcx, pcz, x1 - x0 + 10, z1 - z0 + 10), '#b7b7bd', { style: 'concrete' });
+    addDecal(rect(pcx, pcz, x1 - x0 - 1, z1 - z0 - 1), '#b7b7bd', { style: 'concrete' }); // stays inside the blocks: never over a road
     addDecal(rect(pcx, pcz, x1 - x0, z1 - z0), '#5cae5a', { style: 'grass' });
     const lawns = [];
     for (let i = 0; i < 12; i++) lawns.push(circle(randRange(x0 + 5, x1 - 5), randRange(z0 + 5, z1 - 5), randRange(3, 6), 20));
@@ -159,7 +166,15 @@ export default {
     const { randRange, rand, size: S } = ctx;
     const LOTS = [[-85, -50, -85, -50], [51, 84, -39, -6], [-119, -96, 5, 40]];
     const inLot = (x, z) => LOTS.some((b) => x > b[0] - 1 && x < b[1] + 1 && z > b[2] - 1 && z < b[3] + 1);
-    const place = (n, x, z, ...a) => (inLot(x, z) ? false : ctx.place(n, x, z, ...a));
+    // static props never sit on the asphalt (movers may cross it)
+    const onRoad = (x, z, m) => ROADS.some((c) => Math.abs(x - c) < RW / 2 + m || Math.abs(z - c) < RW / 2 + m);
+    const place = (n, x, z, rot, sc = 1, opts) => {
+      if (inLot(x, z)) return false;
+      const proto = ctx.protos[n];
+      const isStatic = opts && 'move' in opts ? !opts.move : proto && !proto.move;
+      if (isStatic && onRoad(x, z, (proto ? proto.radius * sc : 0) * 0.8)) return false;
+      return ctx.place(n, x, z, rot, sc, opts);
+    };
     // buildings face the nearest street (their front is local +Z)
     const facing = (x, z) => {
       let best = 1e9, rot = 0;

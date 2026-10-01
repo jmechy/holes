@@ -1,5 +1,7 @@
 // Airport object prototypes. Vehicles / aircraft are length-along-X, nose/front toward +X.
-import { box, cyl, cone, sphere, rbox, capsule, lathe, extrude, torus, makeProto } from './build.js';
+import { paletteBuilders, makeProto, articulate } from './build.js';
+import { facadeWall, recessedWindow } from './ModelDetails.js';
+import { applyModelFinishes } from './ModelFinishes.js';
 
 const C = {
   white: '#f4f4f4', gray: '#8d949b', dgray: '#5d646b', lgray: '#c3c8cd', dark: '#2b2b2e', tire: '#1f1f22', glass: '#8fd3f4',
@@ -8,31 +10,48 @@ const C = {
   brown: '#7a5230', purple: '#8a4fc7', pink: '#ee6fa5', teal: '#26a69a', navy: '#22315c', hivis: '#ff7a1a',
   tan: '#d8b26a', hair: '#5a3b22',
 };
+// Explicit material colors retain the map palette; per-part tags override these defaults.
+const { box, cyl, cone, sphere, rbox, capsule, lathe, extrude, torus } = paletteBuilders([
+  [C.glass, 'glass'],
+  [C.dglass, 'glass'],
+  [C.tire, 'rubber'],
+  [C.silver, 'metal'],
+  [C.red, 'paint'], [C.dred, 'paint'], [C.blue, 'paint'], [C.dblue, 'paint'], [C.yellow, 'paint'], [C.orange, 'paint'],
+  [C.green, 'paint'], [C.dgreen, 'paint'], [C.purple, 'paint'], [C.teal, 'paint'], [C.sky, 'paint'], [C.navy, 'paint'],
+  [C.white, 'paint'], ['#aeb6bd', 'paint'], ['#8d949b', 'paint'], ['#e0a800', 'paint'],
+  [C.gray, 'metal'], [C.lgray, 'metal'], [C.dgray, 'metal'], [C.dark, 'metal'],
+  [C.beige, 'stucco'], [C.hivis, 'fabric'],
+]);
 const PI = Math.PI;
 
-const wheel = (x, y, z, r, w = 0.5) => [
-  cyl(r, r, w, C.tire, { x, y, z, rx: PI / 2, segments: 14 }),
-  cyl(r * 0.58, r * 0.58, w + 0.04, C.lgray, { x, y, z, rx: PI / 2, segments: 10 }),
-  ...(r > 0.6 ? [cyl(r * 0.2, r * 0.2, w + 0.1, C.dark, { x, y, z, rx: PI / 2, segments: 6 })] : []),
-];
+// Rolling wheel: tyre + rim + hub share one pivot so they spin together; front (x > 0) wheels also steer.
+const wheel = (x, y, z, r, w = 0.5) => {
+  const pivot = [x, y, z], opts = { radius: r, front: x > 0 };
+  return [
+    articulate(cyl(r, r, w, C.tire, { x, y, z, rx: PI / 2, segments: 16, surface: 'rubber' }), 'wheel', pivot, opts),
+    articulate(cyl(r * 0.58, r * 0.58, w + 0.04, C.lgray, { x, y, z, rx: PI / 2, segments: 10, surface: 'metal' }), 'wheel', pivot, opts),
+    ...(r > 0.3 ? [0, 1, 2].map((i) => articulate(box(r * 0.9, r * 0.12, w + 0.08, C.dgray, { x, y, z, rz: i * PI / 3, surface: 'metal' }), 'wheel', pivot, opts)) : []),
+    ...(r > 0.6 ? [articulate(cyl(r * 0.2, r * 0.2, w + 0.1, C.dark, { x, y, z, rx: PI / 2, segments: 6 }), 'wheel', pivot, opts)] : []),
+  ];
+};
 
 const carParts = (body, roof = body) => [
   box(4.2, 0.2, 1.7, C.dark, { y: 0.4 }),
-  rbox(4.4, 0.62, 1.9, body, { y: 0.74, segments: 2, bevel: 0.18 }),
-  rbox(2.4, 0.72, 1.76, roof, { y: 1.4, x: -0.35, segments: 2, bevel: 0.22 }),
+  rbox(4.4, 0.62, 1.9, body, { surface: 'paint', y: 0.74, segments: 2, bevel: 0.18 }),
+  rbox(2.4, 0.72, 1.76, roof, { surface: 'paint', y: 1.4, x: -0.35, segments: 2, bevel: 0.22 }),
   box(2.0, 0.4, 1.8, C.glass, { y: 1.44, x: -0.35 }),
   box(0.05, 0.4, 1.5, C.glass, { y: 1.44, x: 0.86 }),
   box(0.05, 0.4, 1.5, C.glass, { y: 1.44, x: -1.56 }),
-  box(0.06, 0.42, 1.82, roof, { y: 1.44, x: -0.35 }),
+  box(0.06, 0.42, 1.82, roof, { surface: 'paint', y: 1.44, x: -0.35 }),
   rbox(1.9, 0.08, 1.55, C.lgray, { y: 1.78, x: -0.35, segments: 1, bevel: 0.03 }),
   rbox(0.22, 0.28, 1.95, C.silver, { y: 0.55, x: 2.2, segments: 1, bevel: 0.06 }),
   rbox(0.22, 0.28, 1.95, C.silver, { y: 0.55, x: -2.2, segments: 1, bevel: 0.06 }),
   box(0.06, 0.2, 0.8, C.dark, { y: 0.85, x: 2.21 }),
-  box(0.1, 0.2, 0.42, '#fff6c8', { y: 0.95, x: 2.2, z: 0.68 }), box(0.1, 0.2, 0.42, '#fff6c8', { y: 0.95, x: 2.2, z: -0.68 }),
+  box(0.1, 0.2, 0.42, '#fff6c8', { emissive: 0.8, y: 0.95, x: 2.2, z: 0.68 }), box(0.1, 0.2, 0.42, '#fff6c8', { emissive: 0.8, y: 0.95, x: 2.2, z: -0.68 }),
   box(0.1, 0.18, 0.38, '#e0201a', { y: 0.95, x: -2.2, z: 0.7 }), box(0.1, 0.18, 0.38, '#e0201a', { y: 0.95, x: -2.2, z: -0.7 }),
   box(0.04, 0.5, 0.04, C.dark, { y: 0.85, x: 0.5, z: 0.96 }), box(0.04, 0.5, 0.04, C.dark, { y: 0.85, x: -1.2, z: 0.96 }),
   box(0.04, 0.5, 0.04, C.dark, { y: 0.85, x: 0.5, z: -0.96 }), box(0.04, 0.5, 0.04, C.dark, { y: 0.85, x: -1.2, z: -0.96 }),
-  box(0.16, 0.16, 0.14, body, { y: 1.3, x: 0.78, z: 1.0 }), box(0.16, 0.16, 0.14, body, { y: 1.3, x: 0.78, z: -1.0 }),
+  box(0.16, 0.16, 0.14, body, { surface: 'paint', y: 1.3, x: 0.78, z: 1.0 }), box(0.16, 0.16, 0.14, body, { surface: 'paint', y: 1.3, x: 0.78, z: -1.0 }),
   ...wheel(1.4, 0.4, 0.92, 0.4, 0.32), ...wheel(1.4, 0.4, -0.92, 0.4, 0.32),
   ...wheel(-1.4, 0.4, 0.92, 0.4, 0.32), ...wheel(-1.4, 0.4, -0.92, 0.4, 0.32),
 ];
@@ -124,13 +143,13 @@ const plane = (o) => {
 
 export function buildProtos() {
   const P = {};
-  const add = (name, parts, opts) => (P[name] = makeProto(name, parts.flat(), opts));
+  const add = (name, parts, opts) => (P[name] = applyModelFinishes(makeProto(name, parts.flat(), opts), 'industrial'));
 
   add('car', carParts(C.red), { value: 2.2 });
   add('carBlue', carParts(C.blue, C.dblue), { value: 2.2 });
   add('carWhite', carParts(C.white, C.lgray), { value: 2.2 });
   add('carSilver', carParts('#aeb6bd', '#8d949b'), { value: 2.2 });
-  add('taxi', [...carParts(C.yellow, '#e0a800'), rbox(0.5, 0.2, 0.9, C.white, { y: 1.95, x: -0.35, segments: 1, bevel: 0.05 }), box(0.06, 0.1, 1.5, C.dark, { y: 0.9, x: 0.2, z: 0 })], { value: 2.4 });
+  add('taxi', [...carParts(C.yellow, '#e0a800'), rbox(0.5, 0.2, 0.9, C.white, { emissive: 1.2, y: 1.95, x: -0.35, segments: 1, bevel: 0.05 }), box(0.06, 0.1, 1.5, C.dark, { y: 0.9, x: 0.2, z: 0 })], { value: 2.4 });
 
   add('suitcase', suitcase(C.red, C.dark), { value: 0.3 });
   add('suitcaseBlue', suitcase(C.blue, C.silver), { value: 0.3 });
@@ -146,29 +165,37 @@ export function buildProtos() {
     sphere(0.09, C.orange, { y: 1.0, segments: 8, rings: 5 }),
   ], { value: 0.25 });
 
-  add('crew', [
-    cyl(0.1, 0.09, 0.5, C.navy, { y: 0.3, z: 0.11, segments: 8, flat: false }),
-    cyl(0.1, 0.09, 0.5, C.navy, { y: 0.3, z: -0.11, segments: 8, flat: false }),
-    box(0.32, 0.12, 0.17, C.dark, { y: 0.06, x: 0.05, z: 0.11 }),
-    box(0.32, 0.12, 0.17, C.dark, { y: 0.06, x: 0.05, z: -0.11 }),
-    cyl(0.22, 0.26, 0.6, C.hivis, { y: 0.85, segments: 10 }),
-    cyl(0.235, 0.27, 0.07, C.silver, { y: 0.72, segments: 10 }),
-    cyl(0.225, 0.245, 0.07, C.silver, { y: 0.96, segments: 10 }),
-    cyl(0.07, 0.065, 0.55, C.hivis, { y: 0.88, z: 0.31, rx: 0.25, segments: 8, flat: false }),
-    cyl(0.07, 0.065, 0.55, C.hivis, { y: 0.88, z: -0.31, rx: -0.25, segments: 8, flat: false }),
-    // marshalling wands
-    box(0.05, 0.05, 0.4, C.orange, { y: 0.66, z: 0.42, x: 0.1 }),
-    box(0.05, 0.05, 0.4, C.orange, { y: 0.66, z: -0.42, x: 0.1 }),
-    sphere(0.19, C.skin, { y: 1.37, segments: 10, rings: 8 }),
-    sphere(0.05, C.skin, { y: 1.34, x: 0.19, segments: 6, rings: 4 }),
-    box(0.04, 0.05, 0.05, C.dark, { y: 1.39, x: 0.17, z: 0.08 }),
-    box(0.04, 0.05, 0.05, C.dark, { y: 1.39, x: 0.17, z: -0.08 }),
-    sphere(0.19, C.hair, { y: 1.42, x: -0.06, sy: 0.85, segments: 8, rings: 6, flat: false }),
-    // ear defenders
-    cyl(0.1, 0.1, 0.05, C.red, { y: 1.38, z: 0.2, rx: PI / 2, segments: 8 }),
-    cyl(0.1, 0.1, 0.05, C.red, { y: 1.38, z: -0.2, rx: PI / 2, segments: 8 }),
-    torus(0.2, 0.025, C.dark, { y: 1.45, ry: PI / 2, radial: 4, segments: 10 }),
-  ], { value: 0.6, move: { type: 'walk', speed: 1.5, range: 10 } });
+  add('crew', (() => {
+    const p = [];
+    for (const side of [-1, 1]) {
+      const hip = [0, 0.56, side * 0.11], knee = [0, 0.3, side * 0.11], lo = { side, hip };
+      p.push(
+        articulate(cyl(0.1, 0.09, 0.3, C.navy, { y: 0.41, z: side * 0.11, segments: 8, flat: false, surface: 'fabric' }), 'leg', hip, lo),
+        articulate(cyl(0.09, 0.085, 0.3, C.navy, { y: 0.17, z: side * 0.11, segments: 8, flat: false, surface: 'fabric' }), 'shin', knee, lo),
+        articulate(box(0.32, 0.12, 0.17, C.dark, { y: 0.06, x: 0.05, z: side * 0.11, surface: 'rubber' }), 'shin', knee, lo),
+        // sleeve + marshalling wand swing together about the shoulder
+        ...[
+          cyl(0.07, 0.065, 0.55, C.hivis, { y: 0.88, z: side * 0.31, rx: side * 0.25, segments: 8, flat: false, surface: 'fabric' }),
+          box(0.05, 0.05, 0.4, C.orange, { y: 0.66, z: side * 0.42, x: 0.1, surface: 'paint' }),
+        ].map((g) => articulate(g, 'arm', [0, 1.1, side * 0.3], { side })),
+      );
+    }
+    p.push(
+      cyl(0.22, 0.26, 0.6, C.hivis, { y: 0.85, segments: 10, surface: 'fabric' }),
+      cyl(0.235, 0.27, 0.07, C.silver, { y: 0.72, segments: 10, surface: 'fabric', textureStrength: 0.3 }),
+      cyl(0.225, 0.245, 0.07, C.silver, { y: 0.96, segments: 10, surface: 'fabric', textureStrength: 0.3 }),
+      sphere(0.19, C.skin, { y: 1.37, segments: 10, rings: 8 }),
+      sphere(0.05, C.skin, { y: 1.34, x: 0.19, segments: 6, rings: 4 }),
+      box(0.04, 0.05, 0.05, C.dark, { y: 1.39, x: 0.17, z: 0.08 }),
+      box(0.04, 0.05, 0.05, C.dark, { y: 1.39, x: 0.17, z: -0.08 }),
+      sphere(0.19, C.hair, { y: 1.42, x: -0.06, sy: 0.85, segments: 8, rings: 6, flat: false }),
+      // ear defenders
+      cyl(0.1, 0.1, 0.05, C.red, { y: 1.38, z: 0.2, rx: PI / 2, segments: 8 }),
+      cyl(0.1, 0.1, 0.05, C.red, { y: 1.38, z: -0.2, rx: PI / 2, segments: 8 }),
+      torus(0.2, 0.025, C.dark, { y: 1.45, ry: PI / 2, radial: 4, segments: 10 }),
+    );
+    return p;
+  })(), { value: 0.6, move: { type: 'walk', speed: 1.5, range: 10 } });
 
   add('chock', [
     extrude([[-0.3, 0], [0.3, 0], [0.3, 0.12], [0.0, 0.3], [-0.3, 0.3]], 0.4, C.yellow, { bevel: 0.02, segments: 1 }),
@@ -204,7 +231,7 @@ export function buildProtos() {
     rbox(0.9, 0.5, 1.4, C.dgray, { y: 0.95, x: -1.0, segments: 1, bevel: 0.08 }),
     box(0.4, 0.15, 0.3, C.orange, { y: 2.15, x: 0.6 }),
     rbox(0.2, 0.3, 1.6, C.dark, { y: 0.45, x: 1.75, segments: 1, bevel: 0.05 }),
-    box(0.06, 0.2, 0.3, '#fff6c8', { y: 0.75, x: 1.72, z: 0.5 }), box(0.06, 0.2, 0.3, '#fff6c8', { y: 0.75, x: 1.72, z: -0.5 }),
+    box(0.06, 0.2, 0.3, '#fff6c8', { emissive: 0.8, y: 0.75, x: 1.72, z: 0.5 }), box(0.06, 0.2, 0.3, '#fff6c8', { emissive: 0.8, y: 0.75, x: 1.72, z: -0.5 }),
     box(0.3, 0.15, 0.3, C.dark, { y: 0.4, x: -1.85 }),
     ...wheel(1.1, 0.4, 0.85, 0.4, 0.3), ...wheel(1.1, 0.4, -0.85, 0.4, 0.3),
     ...wheel(-1.1, 0.4, 0.85, 0.4, 0.3), ...wheel(-1.1, 0.4, -0.85, 0.4, 0.3),
@@ -219,13 +246,13 @@ export function buildProtos() {
     box(0.05, 0.4, 1.5, C.glass, { y: 1.44, x: -1.46 }),
     rbox(0.22, 0.28, 1.95, C.dark, { y: 0.55, x: 2.2, segments: 1, bevel: 0.06 }),
     rbox(0.22, 0.28, 1.95, C.dark, { y: 0.55, x: -2.2, segments: 1, bevel: 0.06 }),
-    box(0.1, 0.2, 0.4, '#fff6c8', { y: 0.95, x: 2.2, z: 0.68 }), box(0.1, 0.2, 0.4, '#fff6c8', { y: 0.95, x: 2.2, z: -0.68 }),
+    box(0.1, 0.2, 0.4, '#fff6c8', { emissive: 0.8, y: 0.95, x: 2.2, z: 0.68 }), box(0.1, 0.2, 0.4, '#fff6c8', { emissive: 0.8, y: 0.95, x: 2.2, z: -0.68 }),
     box(0.1, 0.18, 0.38, '#e0201a', { y: 0.95, x: -2.2, z: 0.7 }), box(0.1, 0.18, 0.38, '#e0201a', { y: 0.95, x: -2.2, z: -0.7 }),
     // FOLLOW ME sign on the roof
     box(0.16, 0.5, 0.16, C.dark, { y: 1.95, x: -0.2, z: 0.5 }), box(0.16, 0.5, 0.16, C.dark, { y: 1.95, x: -0.2, z: -0.5 }),
     rbox(0.3, 0.55, 1.7, C.dark, { y: 2.45, x: -0.2, segments: 1, bevel: 0.05 }),
-    rbox(0.34, 0.4, 1.5, C.green, { y: 2.45, x: -0.2, segments: 1, bevel: 0.04 }),
-    box(0.36, 0.14, 1.0, C.yellow, { y: 2.45, x: -0.2 }),
+    rbox(0.34, 0.4, 1.5, C.green, { emissive: 1.2, y: 2.45, x: -0.2, segments: 1, bevel: 0.04 }),
+    box(0.36, 0.14, 1.0, C.yellow, { emissive: 1.2, y: 2.45, x: -0.2 }),
     // checkered stripe
     ...[0, 1, 2, 3, 4, 5, 6, 7].map((i) => box(0.4, 0.04, 0.22, i % 2 ? C.dark : C.white, { y: 1.83, x: -0.3 + (i % 2) * 0.4, z: (i - 3.5) * 0.22 })),
     ...wheel(1.4, 0.4, 0.92, 0.4, 0.32), ...wheel(1.4, 0.4, -0.92, 0.4, 0.32),
@@ -238,7 +265,7 @@ export function buildProtos() {
     rbox(0.2, 0.9, 2.2, C.glass, { y: 2.8, x: 4.85, segments: 1, bevel: 0.05 }),
     box(1.2, 0.8, 2.44, C.glass, { y: 2.8, x: 3.8 }),
     rbox(0.4, 0.4, 2.7, C.red, { y: 0.9, x: 5.0, segments: 1, bevel: 0.08 }),
-    box(0.1, 0.24, 0.5, '#fff6c8', { y: 1.3, x: 5.24, z: 1.0 }), box(0.1, 0.24, 0.5, '#fff6c8', { y: 1.3, x: 5.24, z: -1.0 }),
+    box(0.1, 0.24, 0.5, '#fff6c8', { emissive: 0.8, y: 1.3, x: 5.24, z: 1.0 }), box(0.1, 0.24, 0.5, '#fff6c8', { emissive: 0.8, y: 1.3, x: 5.24, z: -1.0 }),
     // tank: lathe barrel on its side with hoops and red band
     lathe([[0.9, 0], [1.3, 0.25], [1.42, 0.7], [1.42, 5.5], [1.3, 5.95], [0.9, 6.2]], C.silver, { x: -4.4, y: 2.65, rz: -PI / 2, segments: 18 }),
     cyl(1.45, 1.45, 1.0, C.red, { y: 2.65, x: -1.3, rz: PI / 2, segments: 18 }),
@@ -394,11 +421,11 @@ export function buildProtos() {
       box(0.5, 1.2, 5, C.yellow, { y: 8.7, x: 10.1 }),
       box(0.52, 0.5, 3.6, C.red, { y: 8.7, x: 10.14 }),
       // side windows, lamp, vents
-      ...[-6, -2, 2, 6].map((x) => box(1.4, 0.9, 0.08, C.glass, { y: 4.3, x, z: 11.05 })),
+      ...[-6, -2, 2, 6].flatMap((x) => recessedWindow(1.4, 0.9, 0.1, { x, y: 4.3, z: 11.12, frame: 0.08, frameColor: C.white, glassColor: C.glass })),
       ...[-6, -2, 2, 6].map((x) => box(1.6, 0.14, 0.14, C.white, { y: 3.8, x, z: 11.1 })),
       rbox(1.6, 0.5, 1.4, C.gray, { y: 9.5, x: -3, segments: 1, bevel: 0.06 }),
       cyl(0.15, 0.15, 3, C.silver, { y: 9.5, x: -8, segments: 8 }),
-      box(0.3, 0.25, 0.5, '#fff6c8', { y: 6.7, x: 10.3, z: 5.8 }), box(0.3, 0.25, 0.5, '#fff6c8', { y: 6.7, x: 10.3, z: -5.8 }),
+      box(0.3, 0.25, 0.5, '#fff6c8', { emissive: 0.8, y: 6.7, x: 10.3, z: 5.8 }), box(0.3, 0.25, 0.5, '#fff6c8', { emissive: 0.8, y: 6.7, x: 10.3, z: -5.8 }),
       box(0.7, 2.2, 0.06, C.dwood ?? C.brown, { y: 1.1, x: 6, z: 11.07 }),
     ];
     return p;
@@ -407,8 +434,12 @@ export function buildProtos() {
   add('terminal', (() => {
     const p = [
       rbox(46, 0.3, 14, C.gray, { y: 0.15, segments: 1, bevel: 0.08 }),
-      rbox(44, 6, 12, C.beige, { y: 3.3, segments: 1, bevel: 0.2 }),
-      box(44.2, 3.6, 12.2, C.dglass, { y: 3.0 }),
+      box(43.6, 6, 11.4, C.beige, { y: 3.3 }),
+      box(43.8, 3.6, 11.6, C.dglass, { y: 3.0 }),
+      ...[1, -1].flatMap((side) => facadeWall(44, 6, 0.3, C.beige,
+        Array.from({ length: 22 }, (_, i) => ({ x: -20.04 + i * 1.92, y: 2.7, width: 1.7, height: 3.4 })),
+        { y: 0.3, z: side * 5.85, ry: side > 0 ? 0 : PI })),
+      box(0.3, 6, 12, C.beige, { y: 3.3, x: 21.85 }), box(0.3, 6, 12, C.beige, { y: 3.3, x: -21.85 }),
       rbox(44.2, 0.4, 12.2, C.white, { y: 4.9, segments: 1, bevel: 0.05 }),
       rbox(46, 0.6, 14, C.sky, { y: 6.6, segments: 1, bevel: 0.15 }),
       rbox(30, 3.2, 9, C.white, { y: 8.6, x: -3, segments: 1, bevel: 0.2 }),
@@ -443,7 +474,7 @@ export function buildProtos() {
   add('tower', [
     rbox(9, 3, 9, C.beige, { y: 1.5, segments: 1, bevel: 0.2 }),
     rbox(9.6, 0.5, 9.6, C.gray, { y: 3.2, segments: 1, bevel: 0.1 }),
-    ...[-3.4, 0, 3.4].map((x) => box(1.2, 1.2, 0.08, C.glass, { y: 1.7, x, z: 4.53 })),
+    ...[-3.4, 0, 3.4].flatMap((x) => recessedWindow(1.2, 1.2, 0.1, { x, y: 1.7, z: 4.62, frame: 0.1, frameColor: C.white, glassColor: C.glass, mullion: true })),
     box(1.6, 2.2, 0.1, C.dblue, { y: 1.1, x: 3.4, z: 4.52 }),
     lathe([[2.4, 3.4], [2.2, 8], [1.85, 16], [1.7, 24], [1.75, 27.5]], C.white, { segments: 16 }),
     cyl(1.8, 2.35, 3, C.red, { y: 9, segments: 16 }),
@@ -457,7 +488,7 @@ export function buildProtos() {
     lathe([[4.5, 34.5], [3.0, 35.1], [1.0, 35.5], [0, 35.6]], C.red, { segments: 16 }),
     cyl(0.08, 0.08, 6, C.silver, { y: 38.5, x: 1, segments: 6 }),
     box(3.2, 0.2, 0.5, C.dark, { y: 36.3 }),
-    sphere(0.3, C.orange, { y: 36.6, x: 1.6, segments: 8, rings: 6 }),
+    sphere(0.3, C.orange, { emissive: 1.8, y: 36.6, x: 1.6, segments: 8, rings: 6 }),
     cyl(0.5, 0.5, 0.15, C.gray, { y: 35.7, x: -1.5, segments: 10 }),
   ], { value: 80, radius: 5.5 });
 
@@ -465,6 +496,7 @@ export function buildProtos() {
   const shrink = (name, k) => {
     const pr = P[name];
     pr.geometry.scale(k, k, k);
+    for (const a of pr.articulation) { a.pivot = a.pivot.map((v) => v * k); if (a.hip) a.hip = a.hip.map((v) => v * k); if (a.radius) a.radius *= k; }
     pr.radius *= k;
     pr.height *= k;
   };
